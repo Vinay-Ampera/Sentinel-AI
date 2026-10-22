@@ -1,0 +1,49 @@
+{
+  "project_name": "Sentinel AI",
+  "project_status": "setup",
+  "implementation_stage": "Stage 1 - Initialize repository and Claude context (scaffold complete, pending review)",
+  "supported_application_types": [],
+  "in_scope_capabilities": [
+    "project analysis",
+    "test planning with risk-based approval",
+    "sandboxed QA execution",
+    "security validation",
+    "accessibility checks",
+    "AI/LLM and agent security testing",
+    "observability and alerts",
+    "failure investigation and regression-test proposals",
+    "fix verification and regression tracking",
+    "role-controlled dashboards, history, reports, evidence-grounded chat"
+  ],
+  "out_of_scope": [
+    "unauthorized or production-targeted testing",
+    "executing target code outside the sandbox",
+    "claiming results or vulnerabilities without evidence"
+  ],
+  "security_defaults": {
+    "sandbox_network": "deny",
+    "sandbox_user": "non-root",
+    "mount_docker_socket": false,
+    "pass_platform_secrets_to_sandbox": false,
+    "authorization_enforced_server_side": true,
+    "secrets_in_repo": false
+  },
+  "approval_required_for": [
+    "destructive tests",
+    "intrusive security scans",
+    "production or public targets",
+    "high-risk actions per policy",
+    "automatic retry of destructive tests"
+  ],
+  "decisions_pending": [
+    "first-release scope and supported application types",
+    "authentication/session mechanism and permission matrix",
+    "initial source-input method and repository providers",
+    "Celery+Redis proof of concept",
+    "sandbox isolation level",
+    "artifact storage provider",
+    "Gemini model and token budgets",
+    "CI checks and runtime versions",
+    "production topology and secrets management"
+  ]
+}

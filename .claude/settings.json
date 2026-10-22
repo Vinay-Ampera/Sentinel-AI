@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(ls:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(python3 --version)",
+      "Bash(poetry --version)",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(docker --version)",
+      "Bash(docker compose version)",
+      "Bash(python3 -m json.tool:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Bash(rm -rf:*)",
+      "Bash(sudo:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(docker run --privileged:*)",
+      "Bash(docker system prune:*)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git add:*)",
+      "Bash(poetry add:*)",
+      "Bash(poetry install:*)",
+      "Bash(npm install:*)",
+      "Bash(npm create:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker run:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  }
+}

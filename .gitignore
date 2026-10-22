@@ -1,0 +1,54 @@
+# Secrets / environment (commit only *.example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Claude Code local
+.claude/settings.local.json
+
+# Python / backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Sentinel runtime data (never commit)
+artifacts/
+workspaces/
+sandbox-workspaces/
+uploads/
+*.log
+
+# Docker local overrides
+docker-compose.override.yml
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
