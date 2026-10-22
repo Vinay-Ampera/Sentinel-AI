@@ -15,6 +15,7 @@ sqlalchemy = ">=2.0"
 psycopg = {version = ">=3.2", extras = ["binary"]}
 pydantic-settings = ">=2.7"
 redis = ">=5"
+argon2-cffi = "^25.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8"
@@ -40,9 +41,15 @@ packages = ["sentinel_ai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 
 [tool.ruff.lint.per-file-ignores]
 # Long SQL string literals in migrations and DB tests are clearer unwrapped.
 "migrations/**" = ["E501"]
 "tests/integration/**" = ["E501"]
+# Dense detection tables and one-line gap definitions read better unwrapped.
+"src/sentinel_ai/services/analyzer.py" = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency declarations in signatures are idiomatic, not mutable defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]

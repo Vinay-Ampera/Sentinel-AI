@@ -90,6 +90,7 @@ class Settings(DatabaseSettings):
     session_absolute_hours: int = 12
     login_max_failures: int = 5
     login_lockout_minutes: int = 15
+    login_ip_max_attempts_per_minute: int = 20
 
     # --- Artifacts and uploads (consumed from Stage 6/8) ---
     artifact_storage_backend: Literal["local", "s3", "gcs"] = "local"
@@ -125,6 +126,7 @@ class Settings(DatabaseSettings):
         "session_absolute_hours",
         "login_max_failures",
         "login_lockout_minutes",
+        "login_ip_max_attempts_per_minute",
         "upload_max_mb",
         "zip_max_uncompressed_mb",
         "zip_max_files",
@@ -148,6 +150,22 @@ class Settings(DatabaseSettings):
                 raise ValueError("SESSION_COOKIE_SECURE must be true in production")
         return self
 
+    def artifact_root(self) -> Path:
+        """Absolute artifact directory (relative paths resolve against backend/)."""
+        path = self.artifact_storage_dir
+        return (path if path.is_absolute() else BACKEND_DIR / path).resolve()
+
+    @property
+    def auth_configured(self) -> bool:
+        pepper = self.session_token_pepper
+        return pepper is not None and len(pepper.get_secret_value()) >= 32
+
+    def pepper(self) -> str:
+        """Session-token pepper; ConfigError (value-free) if missing or too short."""
+        if not self.auth_configured or self.session_token_pepper is None:
+            raise ConfigError("SESSION_TOKEN_PEPPER (>= 32 chars) is not configured")
+        return self.session_token_pepper.get_secret_value()
+
     def safe_summary(self) -> dict[str, object]:
         """Non-secret view for startup logs and diagnostics."""
         return {
@@ -157,6 +175,7 @@ class Settings(DatabaseSettings):
             "artifact_storage_backend": self.artifact_storage_backend,
             "database_configured": True,
             "redis_configured": True,
+            "auth_configured": self.auth_configured,
             "gemini_configured": self.gemini_api_key is not None,
         }
 

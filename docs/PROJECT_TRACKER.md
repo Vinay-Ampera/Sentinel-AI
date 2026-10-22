@@ -1,0 +1,296 @@
+# Sentinel AI — Project Tracker
+
+Detailed progress record. The stage list, requirements and acceptance criteria are in [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md); product requirements are in the blueprint; unresolved questions are in [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md); architecture decisions are in [`decisions/`](decisions/).
+
+**Rule:** record only what was actually run and observed. State "not run" explicitly. A stage is Completed only when its acceptance criteria are met and recorded here.
+
+## 1. Stage dashboard
+
+| Stage | Name | Status | Detail |
+|---|---|---|---|
+| 0 | Confirm scope and decisions | Completed | Owner-confirmed scope (section 3); sign-off pending |
+| 1 | Repository and Claude context | Completed | Section 4 |
+| 2 | Architecture, data model, API contracts | Completed | Section 4; migrations applied to real DB per owner report (Q28) |
+| 3 | Local services and configuration | Completed | Section 4; Redis deferred to Stage 7 |
+| 4 | Authentication and RBAC (identity, roles, audit) | Completed | Authentication + RBAC done; project/membership routes delivered in Stage 5; approval-decision audit in Stage 6 |
+| 5 | Project intake and deterministic analysis | Completed | ZIP upload + static analysis done; Git/localhost/remote registered, not analysed (Q36) |
+| 6 | Test plans and approval policies | Pending | Not started |
+| 7 | Job queue, batches, cancellation, recovery | Pending | Not started |
+| 8 | Sandboxed execution foundation | Pending | Not started |
+| 9 | First QA execution path | Pending | Not started |
+| 10 | Security integrations and finding verification | Pending | Not started |
+| 11 | LangGraph workflows and selective Gemini | Pending | Not started |
+| 12 | Observability, alerts, failure-to-test loop | Pending | Not started |
+| 13 | Accessibility, LLM/agent security, telemetry | Pending | Not started |
+| 14 | Evidence-grounded chatbot, reporting, history | Pending | Not started |
+| 15 | Regression verification and reliability | Pending | Not started |
+| 16 | CI, Docker, deployment readiness, docs | Pending | Not started |
+
+Owner review/commit state: Stages 0, 2, 3 were committed (cf4f1ee). Stages 4 and 5 are implemented but **uncommitted** as of 2026-10-22.
+
+## 2. Latest verified results (Stage 5 completion, 2026-10-22)
+
+Disposable PostgreSQL 17 database only; nothing was run against the live `sentinel-ai` database, a live server, or a browser.
+
+| Check | Result |
+|---|---|
+| pytest with disposable DB | 184 passed (1 upstream httpx/starlette warning) |
+| pytest without DB | 116 passed, 68 skipped (DB tests skip by design) |
+| `ruff check` | clean |
+| `ruff format --check` | clean (57 files) |
+| `mypy` | clean (37 source files) |
+| Database changes in Stages 4-5 | none (no migration) |
+
+## 3. Decisions and scope (pointers and summaries)
+
+- **Stack (ADR-0001, Accepted):** FastAPI, Celery + Redis, LangGraph, Gemini, Docker; React + Vite + JavaScript (no TypeScript); Python 3.12 + Poetry; PostgreSQL + Alembic.
+- **Authentication (ADR-0002, Accepted in Stage 4):** email + password, Argon2id, server-side sessions with HMAC-hashed tokens, CSRF header + Origin allow-list, lockout and rate limiting; no SSO or bearer tokens in the first release.
+- **Permission matrix:** `SECURITY_AND_SAFETY.md`; implemented in `backend/src/sentinel_ai/core/permissions.py`. Policy-dependent rows default to deny until Stage 6 (Q27, Q34).
+- **Stage 5 scope decisions:** ZIP upload is the analysable source type; Git, localhost and remote-URL sources are registered and validated but not analysed; production remote targets are refused; raw `application/zip` upload instead of multipart (Q38); synchronous analysis returning 201 until Stage 7 (Q37).
+- **Swagger local sign-in:** outside production the API's own origin is accepted by the Origin check; production accepts only `CORS_ALLOWED_ORIGINS`; the CSRF header is declared in OpenAPI.
+- **First-release scope (confirmed 2026-10-22, moved here from the Stage 0 section of the plan):**
+
+  - Application types: web apps, REST APIs, AI apps (RAG/agents).
+  - Inputs: Git repository, ZIP upload, localhost URL, live development/staging URL.
+  - Testing modes: automatic recommendations, prompt-based planning, developer-defined tests/scripts.
+  - Excluded: MiroFish.
+  - Requirements: evidence-backed findings; deterministic checks before LLM calls where practical, with cost limits; extensible testing-tool integrations; restricted execution for project code and custom scripts; production testing blocked by default unless explicitly authorized and approved.
+
+## 4. Remaining work and known issues
+
+- Stage 6 not started; no work begins without owner go-ahead.
+- Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
+- Asynchronous analysis (Q37, Stage 7); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
+- Redis not started locally (Q32, deferred to Stage 7); readiness does not require Redis (Q31).
+- Frontend: no authentication or intake screens yet.
+- Owner actions: commit Stages 4-5; add `SESSION_TOKEN_PEPPER` and the optional artifact/ZIP/login variables to `backend/.env` and `backend/.env.example` (the latter is outside Claude's permitted paths).
+- Full list of open questions: `OPEN_QUESTIONS.md`.
+
+## 5. Per-stage notes (moved verbatim from the former status lines in the plan)
+
+**Stage 0 — Confirm scope and decisions**  
+**Status:** DONE pending owner review (2026-10-22) — blueprint reviewed against ADR-0001; stack (Q14) and first-release scope (Q7) confirmed by the owner and recorded in ADR-0001 (now Accepted), OPEN_QUESTIONS and `settings.json`. Q15–Q24 are consciously deferred to Stage 2 or later. Celery+Redis and Docker isolation are chosen but not yet validated (Q6, Q8).
+
+**Stage 1 — Repository and Claude context**  
+**Status:** DONE pending owner review (2026-10-21) — acceptance criteria met by observed checks, see the progress log, section 7 of this file. Stage 0 decisions confirmed 2026-10-22; clean-clone verification done 2026-10-22 (the progress log, section 7 of this file). Awaiting owner sign-off.
+
+**Stage 2 — Architecture, data model, API contracts**  
+**Status:** DONE pending owner review (2026-10-22), with one open item: the migrations are verified on a disposable database but **not yet applied to the real `sentinel-ai` database** (see Q28). Owner confirmation of ADR-0002 / permission matrix (Q5, Q27) also pending. Evidence: the progress log, section 7 of this file.
+
+**Stage 3 — Local services and configuration**  
+**Status:** DONE (2026-10-22) — owner-reported live verification plus Claude's automated checks (the progress log, section 7 of this file). Redis is unavailable locally and is deliberately deferred to Stage 7.
+
+**Stage 4 — Authentication and RBAC (identity, roles, audit)**  
+**Status:** AUTHENTICATION + RBAC DONE pending owner review (2026-10-22); project ownership/membership routes and approval-decision auditing deferred to the stages that create those routes (see progress log)
+
+**Stage 5 — Project intake and deterministic analysis**  
+**Status:** DONE pending owner review (2026-10-22): ZIP upload + static analysis; Git / localhost / remote-URL sources are registered and validated but not analysed (analysis depends on Stage 6 authorization and the Stage 8 sandbox; see Q36)
+
+## 6. Progress update template
+
+Append a new entry to the progress log after meaningful work, then update the dashboard above and the stage's status and next action in `IMPLEMENTATION_PLAN.md`.
+
+Append or update this section after meaningful work:
+
+```text
+Date:
+Stage:
+Status: NOT STARTED / IN PROGRESS / BLOCKED / DONE / DEFERRED
+Changes made:
+Files changed:
+Commands actually run:
+Test results:
+Acceptance criteria met:
+Known issues:
+Decisions made or changed:
+Next action:
+```
+
+Keep one current status per stage; use Git history and decision records for detailed historical changes.
+
+## 7. Progress log (chronological; moved verbatim from section 21 of the plan)
+
+```text
+Date: 2026-10-21
+Stage: 0 and 1 (documentation setup only)
+Status: Stage 0 IN PROGRESS; Stage 1 IN PROGRESS (historical entry; superseded by later entries)
+Changes made: Created instruction files, settings, .gitignore, architecture/doc skeletons, ADR-0001 (Proposed), OPEN_QUESTIONS. Blueprint added to docs/ (byte-identical to Downloads/Sentinel_AI_Full_Project_Blueprint_Updated.md). This file replaced with the complete plan (byte-identical copy of Sentinel_AI_IMPLEMENTATION_PLAN.md) plus status edits and this log. Removed redundant Sentinel_AI_Project_Overview.md.
+Commands actually run: file listing, cmp/md5sum comparisons, cp, rm of the overview, JSON validation of settings.
+Test results: none; no code exists.
+Acceptance criteria met: none fully.
+Known issues: see docs/OPEN_QUESTIONS.md.
+Decisions made or changed: none.
+Next action: resolve Q9 (tool/version choices) and Q12 (git init), then begin Stage 1 project init on approval.
+```
+
+```text
+Date: 2026-10-21
+Stage: 1 — Initialize repository and Claude context
+Status: DONE pending owner review (Stage 0 still IN PROGRESS)
+Changes made: git init -b main (no commits). Blueprint reviewed vs ADR-0001/skeletons -> OPEN_QUESTIONS Q14-Q24. Backend: Poetry project (Python 3.12), FastAPI app with GET /api/v1/health, pytest test, Ruff/mypy config, Alembic initialized in backend/migrations (no schema, empty sqlalchemy.url), .env.example, README. Frontend: Vite + React scaffold (originally TS; converted to JavaScript, see amendment entry below) with a static heading, Vitest + Testing Library test, .env.example, README. Updated CLAUDE.md commands, root README, settings.json stage, ADR-0001 addendum.
+Files changed: backend/**, frontend/**, README.md, settings.json, docs/OPEN_QUESTIONS.md, docs/decisions/ADR-0001-*.md, docs/IMPLEMENTATION_PLAN.md, backend/CLAUDE.md, frontend/CLAUDE.md.
+Commands actually run: poetry install; poetry run pytest / ruff check / ruff format --check / mypy / alembic --help; npm install; npm run lint / test / build.
+Test results: backend pytest 1 passed (1 upstream deprecation warning); ruff check and format clean; mypy strict clean (4 files); alembic CLI runs. Frontend oxlint exit 0; vitest 1 passed; build succeeded. NOT run: dev servers, uvicorn live request, Docker, any CI.
+Acceptance criteria met: frontend/backend separate; scoped instructions exist; no secrets committed (placeholders only); hello-world checks pass; commands documented. Not verified: reproducibility from a clean checkout (no clean-clone test done).
+Known issues: Q14-Q24 in OPEN_QUESTIONS; frontend/backend Dockerfiles, docker-compose and CI intentionally deferred to Stages 3/16.
+Decisions made or changed: toolchain confirmed (ADR-0001 addendum); oxlint kept as Vite template default.
+Next action: owner review; resolve Q14/Q15/Q7; then Stage 2 (not started).
+```
+
+```text
+Date: 2026-10-21
+Stage: 1 (amendment)
+Changes made: Frontend converted from TypeScript to JavaScript per owner request (removed tsconfig*, typescript and @types/*; files renamed to .jsx/.js; build script now `vite build`). Docs updated (frontend CLAUDE.md/README, ADR-0001 addendum, this plan).
+Test results: superseded by the verification entry below (the original "re-run (see report)" had no recorded results).
+```
+
+```text
+Date: 2026-10-22
+Stage: 1 (verification after JavaScript conversion)
+Status: DONE pending owner review (Stage 0 still IN PROGRESS)
+Changes made: docs only. frontend/README.md build comment corrected (no type-check); plan file tree main.tsx -> main.jsx; stale TS/"see report" wording in earlier log entries annotated.
+Commands actually run: frontend: npm run lint; npm test; npm run build. backend: poetry run pytest; ruff check .; ruff format --check .; mypy; alembic --help.
+Test results: frontend oxlint exit 0; vitest 1 file / 1 test passed; vite build succeeded (16 modules, dist/ emitted). backend pytest 1 passed, 1 warning (starlette/httpx deprecation, Q23); ruff check clean; ruff format 8 files already formatted; mypy no issues in 4 source files; alembic CLI prints usage.
+NOT run: dev servers, live uvicorn request, Docker, CI, clean-clone reproducibility test, git commit (none made; awaiting owner approval).
+Acceptance criteria: separate frontend/backend - met; root and scoped instructions - met; no secrets committed - met (placeholders only, no commits exist); hello-world checks - met (tests/build/lint above); setup commands documented - met. Reproducibility from a clean checkout - NOT verified.
+Known issues: Q14/Q7 open (Stage 0); Q23 warning.
+Next action: owner decides on initial commit and clean-clone test; owner review/sign-off.
+```
+
+```text
+Date: 2026-10-22
+Stage: 1 (repository verification)
+Status: DONE pending owner review (Stage 0 still IN PROGRESS)
+Changes made: tracker only.
+Commands actually run: git status -sb; git log; git remote -v; git branch -vv; git ls-remote origin; git ls-files filtered for .env/node_modules/.venv/dist/caches.
+Results: branch main tracks origin/main (git@github.com:Vinay-Ampera/Sentinel-AI.git) at b55c582 "chore: initialize Sentinel AI project structure", the only commit; working tree clean; ls-remote returns the same hash; 44 tracked files, none are .env, node_modules, .venv, dist or tool caches.
+NOT run: clean-clone reproducibility test (not yet done, still the one unverified Stage 1 criterion); CI (none configured).
+Next action: owner approval for a clean-clone test; owner decisions on Q7 and Q14.
+```
+
+```text
+Date: 2026-10-22
+Stage: 0 (decisions) and 1 (clean-clone verification)
+Status: Stage 0 DONE pending owner review; Stage 1 DONE pending owner review
+Changes made: ADR-0001 -> Accepted with 2026-10-22 addendum (stack, scope, inputs, testing modes, MiroFish excluded, five requirements). OPEN_QUESTIONS: Q7 and Q14 resolved, Q18 note, decisions section and Stage 2 follow-ups. IMPLEMENTATION_PLAN: Stage 0/1 status and first-release scope. settings.json: supported_application_types, supported_inputs, testing_modes, exclusions, decisions_pending. Docs/config only; no application code changed.
+Commands actually run: git clone git@github.com:Vinay-Ampera/Sentinel-AI.git into the session scratchpad (commit b55c582); backend: poetry install (in-project venv), pytest, ruff check, ruff format --check, mypy; frontend: npm ci, npm run lint, npm test, npm run build.
+Test results (clean clone): pytest 1 passed, 1 warning (Q23); ruff clean; ruff format 8 files already formatted; mypy no issues in 4 files; npm ci 0 vulnerabilities; oxlint exit 0; vitest 1 file / 1 test passed; vite build succeeded.
+NOT run: live uvicorn/dev-server request (command was denied by the permission prompt), Docker, CI. The clone verifies the committed state b55c582 only; the doc edits above are uncommitted.
+Acceptance criteria (Stage 1): all met, including reproducible setup from a clean checkout (README commands for install, lint, test, build worked as written, with Poetry in-project venv for the backend).
+Known issues: Q6/Q8 unvalidated; Q15-Q24 deferred; no CI; no live-server check.
+Next action: owner reviews and commits these doc changes; sign-off on Stage 0/1; Stage 2 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 2 — Architecture, data model, and API contracts
+Status: DONE pending owner review; real-database apply NOT done
+Changes made: Alembic env.py now reads DATABASE_URL from the environment only (psycopg 3). Added deps sqlalchemy>=2.0 and psycopg[binary]>=3.2 (poetry.lock updated). Migrations 0001_app_user_schema (roles, users, sessions, password_reset_tokens) and 0002_public_application_schema (24 tables: teams, memberships, projects, sources, target_authorizations, analysis_snapshots, plans, planned_tests, approvals, runs, batches, results, job_events, findings + events/evidence/verification/regression, artifacts, llm_usage, policies, audit_events, state_transitions) with DB-enforced rules (state machine, evidence-backed findings, append-only audit, production authorization guard, source URL guards). Tests: backend/tests/integration/test_migrations.py (8 tests, need disposable TEST_DATABASE_URL ending _test). Docs rewritten: DATABASE_SCHEMA, SYSTEM_ARCHITECTURE, API_DESIGN, JOB_AND_SANDBOX_DESIGN, SECURITY_AND_SAFETY, TEST_STRATEGY, FILE_STRUCTURE; new ADR-0002 (Proposed); backend .env.example/README/CLAUDE.md; OPEN_QUESTIONS Q25-Q30; settings.json.
+Commands actually run: initdb + temporary PostgreSQL 17 server on a unix socket (/tmp/sai_pg, data in session scratchpad) with database sentinel_ai_test; poetry add; alembic upgrade head / downgrade base / upgrade head --sql; pytest (with and without TEST_DATABASE_URL); ruff check; ruff format --check; mypy; psql probes on the disposable DB only.
+Results: upgrade head from empty DB succeeded; downgrade base succeeded; re-upgrade succeeded. pytest with TEST_DATABASE_URL: 9 passed (1 health + 8 DB tests), 1 upstream warning. Without it: 1 passed, 8 skipped. ruff check clean; ruff format clean (11 files); mypy no issues (4 files). Pre-existing tables/rows (public.legacy_probe) survived upgrade, downgrade and re-upgrade. Manual test: creating a conflicting public.teams table with a row then running upgrade failed with DuplicateTable, rolled back atomically (no app_user schema, no new tables) and left the row intact. Offline `upgrade head --sql` emits 29 CREATE TABLE statements. Missing DATABASE_URL gives a clear error.
+NOT run: anything against the real sentinel-ai database (backend/.env is blocked from Claude by a deny rule and no credentials were available or requested; role "vinayrepalle" does not exist on the local server). Existing schemas/tables of sentinel-ai were therefore NOT inspected. No API endpoints, models, auth code, Docker, Redis, Celery, or frontend changes. Frontend checks not rerun (no frontend change). Nothing committed or pushed.
+Acceptance criteria: DATABASE_SCHEMA agrees with API/workflow docs (cross-checked: entity/status names, source types, approval and production rules) - met by review, not by automated check; project ownership/access scope explicit (DATABASE_SCHEMA, SECURITY_AND_SAFETY) - met; migrations create the schema from an empty database - met on the disposable DB, not yet on the real DB; no feature depends on undocumented schema (deferred tables listed) - met.
+Known issues: Q5/Q27 confirmation; Q25, Q26, Q28-Q30 new; retention/production store undecided; alerts/chat/report tables intentionally deferred; Argon2 dependency deferred to Stage 4.
+Next action: owner inspects the real database and applies the migrations (commands in docs/DATABASE_SCHEMA.md), confirms ADR-0002, reviews and commits. Stage 3 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 2 (finalization)
+Status: DONE pending owner review; real-database apply still NOT done (by instruction)
+Changes made: backend/.env.example rewritten with every Stage 2 variable, each labelled [NOW] (DATABASE_URL, TEST_DATABASE_URL) or [LATER: Stage N], placeholders only. backend/.env was not read or modified. Stage 2 status line unchanged.
+Commands actually run: script comparing CREATE TABLE names in the two migrations with DATABASE_SCHEMA.md; restarted the disposable PostgreSQL 17 server (/tmp/sai_pg, database sentinel_ai_test) and stopped it afterwards; pytest with TEST_DATABASE_URL; ruff check; ruff format --check; mypy; alembic upgrade head and current on the disposable DB.
+Results: 28 tables in migrations (4 app_user + 24 public), all named in DATABASE_SCHEMA.md; pytest 9 passed (1 upstream warning); ruff clean; format clean (11 files); mypy clean (4 files); alembic current = 0002_public_application_schema (head); information_schema shows app_user 4 tables, public 24 + alembic_version. .gitignore: .env.* ignored, .env.example not ignored and tracked.
+NOT run: anything against the real sentinel-ai database; no new database created.
+Acceptance criteria: all four met on the disposable database (see Stage 2 section). "Migrations create the schema from an empty database" is proven on the disposable DB only.
+```
+
+```text
+Date: 2026-10-22
+Stage: 2 (owner-reported real-database apply)
+Status: Stage 2 DONE pending owner review
+Report (from the project owner; NOT independently verified by Claude, who has no access to the real database): alembic migrations were applied to the existing local sentinel-ai database; 28 tables created (4 in app_user, 24 in public) and the owner's migration/verification commands completed successfully. Exact command output was not provided.
+Claude's own evidence remains the disposable-database results above.
+Next action: owner sign-off and commit. Stage 3 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 3 — Local development services and configuration
+Status: DONE pending owner review
+Already present before the continuation (written in the interrupted session): dependencies pydantic-settings and redis; core/config.py (Settings, DatabaseSettings, ConfigError, value-free validation errors, production rules); core/logging.py (URL-password redaction); core/health.py (database, migration, redis probes returning status words only); db/engine.py (engine + session factory).
+Newly implemented in the continuation: migrations/env.py now loads DATABASE_URL through DatabaseSettings (env, then backend/.env; SystemExit with a value-free message on error); core/errors.py (error envelope handlers); core/middleware.py (request ID + security headers); api/health.py (/health, /health/live, /health/ready, 200/503); main.py application factory create_app(settings) with lifespan, CORS allow-list, lazy engine (run with `uvicorn sentinel_ai.main:create_app --factory`); docker-compose.yml (Redis; optional separate PostgreSQL under profile local-db; no default passwords; ports bound to 127.0.0.1); root .env.example; backend/Makefile (lint, format-check, typecheck, test, check, migrate targets); backend/.env.example relabelled [NOW]/[LATER] with SENTINEL_ENV_FILE, DB_*, REDIS_*; tests: tests/unit/test_config.py, tests/unit/test_api_foundation.py, updated tests/unit/test_health.py, and 3 more tests in tests/integration/test_migrations.py (probes and /health/ready against the disposable DB); docs: backend README/CLAUDE.md, root README, FILE_STRUCTURE.
+Commands actually run: pytest (with and without TEST_DATABASE_URL), make check, ruff check, ruff format --check, mypy, docker compose config (validation only), frontend npm run lint/test/build, temporary PostgreSQL 17 on a unix socket for the disposable database (stopped afterwards).
+Results: with the disposable DB: pytest 36 passed (1 upstream warning); without it: 26 passed, 10 skipped (DB tests skip by design); ruff check clean; ruff format clean (21 files); mypy no issues (12 source files); `make check` passed end to end. Compose: `docker compose config` fails with a clear message when REDIS_PASSWORD is unset, validates with REDIS_PASSWORD only (services: redis) and with the local-db profile (redis, postgres). Frontend: lint exit 0, vitest 1 passed, build succeeded (unchanged code, rerun for completeness).
+Acceptance criteria: (1) Services start from documented commands - Compose file and commands documented and config-validated; containers were NOT started (would pull images), so actual startup is not verified. (2) Secrets environment-supplied and not committed - met: SecretStr, no defaults for passwords, only .env.example files tracked, .env ignored. (3) Backend can connect to the database and run migrations - met on the disposable database (probes, upgrade/downgrade, /health/ready end to end); NOT run against the real sentinel-ai database by Claude. (4) Health/readiness work without exposing sensitive values - met (tests assert no user, password, host or database name in responses).
+NOT run: uvicorn as a live server; docker compose up; anything against the real sentinel-ai database. Claude never connected to sentinel-ai in Stage 3, and ran no DDL/DML anywhere except the disposable database; the existing sentinel-ai tables were not touched (owner-reported state: 28 tables).
+Owner-side verification (safe, read-only): cd backend && poetry run alembic current   # expect 0002_public_application_schema (head); then start the API and GET /api/v1/health/ready (expect database ok, migrations ok).
+Known issues: Q31 below; Redis does not yet fail readiness (deliberate until Stage 7).
+Next action: owner review/commit; Stage 4 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 3 (final verification)
+Status: DONE
+Owner-reported live verification (project owner; Claude has no access to the real database or running servers and did not observe these): backend, frontend, the sentinel-ai database, Alembic migrations, and the health endpoints all work when run live. Redis is currently unavailable on the owner's machine; per the owner it will be addressed in Stage 7. Exact command output was not provided.
+Claude-run checks (this session): with a disposable PostgreSQL database, `make check` passed: pytest 36 passed (1 upstream warning), ruff check clean, ruff format clean (21 files), mypy no issues (12 source files). Frontend: lint exit 0, vitest 1 passed, vite build succeeded. Disposable server stopped afterwards.
+Decisions: Q31 resolved - Redis stays reported-but-not-required in /health/ready until Stage 7 (consistent with the owner's report: readiness is not blocked by the missing Redis). Q32 narrowed - Compose Redis/PostgreSQL services are config-validated only; actually starting them is deferred with Redis to Stage 7.
+Acceptance criteria: (1) Services start from documented commands - met for backend, frontend and PostgreSQL (owner-reported); the Redis service is the documented exception, deferred to Stage 7 by owner decision. (2) Secrets environment-supplied and not committed - met. (3) Backend connects to the database and runs migrations - met (owner-reported live on sentinel-ai; Claude-verified on the disposable database). (4) Health/readiness without exposing sensitive values - met (tests; owner-reported live endpoints work).
+NOT run by Claude: live servers, docker compose up, anything against sentinel-ai.
+Next action: owner review/commit; Stage 4 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 4 — Authentication and role-based access control (scope requested by the owner: authentication and authorization only)
+Status: authentication + RBAC DONE pending owner review. NOT done by design: project CRUD/membership routes (Stage 5), approval-decision audit (Stage 6), frontend login UI.
+Implemented (ADR-0002, now Accepted): Argon2id password hashing (argon2-cffi added) with policy (12-128 chars, repetition/common-list/email-name checks); server-side sessions in app_user.sessions (256-bit token in HttpOnly SameSite=Lax cookie, only an HMAC-SHA-256 keyed with SESSION_TOKEN_PEPPER stored, new token every login, idle + absolute expiry, revocation); CSRF (per-session token re-derivable for GET /auth/me, X-CSRF-Token + Origin allow-list on POST/PUT/PATCH/DELETE); per-account lockout (LOGIN_MAX_FAILURES / LOGIN_LOCKOUT_MINUTES) with uniform 401s and dummy-hash timing equalisation; per-IP login rate limit (in-process); endpoints POST /auth/login, /auth/logout, GET /auth/me, POST /auth/password (revokes other sessions), GET/DELETE /auth/sessions; GET /users, POST /admin/users, PATCH /admin/users/{id} with the documented Admin-vs-Super-Admin rules, self-change prohibition, last-Super-Admin guard, session revocation on role change/deactivation; permission matrix as code (core/permissions.py); project access resolver (owner / membership / team access / team owner; Super Admin all; Admin no implicit access; unknown and inaccessible both 404) and route guard require_project_access; audit rows (auth.login/logout/lockout/password_change/session_revoke, user.create/update/bootstrap_super_admin, authz.denied) with redaction; operator command `python -m sentinel_ai.cli create-super-admin` (password from prompt). No migration was needed: the existing app_user/audit schema is used unchanged.
+Changed/added files: backend/src/sentinel_ai/{core/security.py, core/permissions.py, core/ratelimit.py, core/errors.py (DomainError), core/config.py (login_ip_max_attempts_per_minute, pepper()), repositories/identity.py, repositories/project_access.py, services/{audit,auth,users,project_access}.py, schemas/identity.py, api/{deps,auth,admin}.py, cli.py, main.py}; backend/pyproject.toml + poetry.lock (argon2-cffi, ruff B008 setting, pytest path); tests/support.py, tests/unit/{test_security_primitives,test_auth_unauthenticated}.py, tests/integration/{conftest,test_auth_api,test_authorization}.py; docs.
+Commands actually run (backend/): pytest with a disposable PostgreSQL 17 (database sentinel_ai_test) and without it; ruff check; ruff format --check; mypy.
+Results: with the disposable DB 78 passed (1 upstream httpx/starlette warning); without it 38 passed, 40 skipped (DB tests skip by design); ruff clean; format clean (44 files); mypy clean (29 source files).
+NOT run: anything against the real sentinel-ai database (no user created there); a live uvicorn session or browser login; backend/.env was not read or modified (access denied), so SESSION_TOKEN_PEPPER presence in it is unverified.
+Acceptance criteria: (1) Backend enforces permissions on every protected route - met for all routes that exist; test_all_non_public_routes_require_a_session walks the OpenAPI schema and asserts 401 for each non-public route. (2) UI role controls are not the only check - met (server-side only; no UI yet). (3) Unauthorized users cannot read projects/runs/artifacts/findings - guard and cross-project/cross-role tests are done; those routes do not exist yet, so each Stage 5-10 route must use require_project_access (tested through a throw-away probe router). (4) Sensitive actions are auditable - met for authentication and user administration; membership changes and approval decisions must write audit rows when built.
+Known issues / owner actions: (a) add SESSION_TOKEN_PEPPER (>= 32 random chars, e.g. `python -c "import secrets;print(secrets.token_urlsafe(48))"`) and optionally LOGIN_IP_MAX_ATTEMPTS_PER_MINUTE to backend/.env; I could not edit backend/.env.example, which should also gain LOGIN_IP_MAX_ATTEMPTS_PER_MINUTE; (b) create the first Super Admin: `cd backend && poetry run python -m sentinel_ai.cli create-super-admin --email ... --display-name ...`; (c) Q33-Q35 in OPEN_QUESTIONS.
+Next action: owner review/commit. Stage 5 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 5 — Project intake and deterministic analysis
+Status: DONE for the ZIP-upload source type, pending owner review. NOT done: Git repository, localhost URL and remote URL sources (Q36); analysis of anything other than an uploaded ZIP; frontend screens; asynchronous (202) analysis.
+Scope decisions: (1) ZIP upload is the initial input method because it needs no network and no process execution. Git (clone = network + hooks/credentials), localhost URL (sandbox reachability, Q26) and remote URL (target authorization/SSRF) need Stage 6/8 machinery and are recorded, not half-built. (2) Stage 4 deferred project CRUD and membership to the stages that need them; Stage 5's ownership criterion needs them, so they are included. (3) The upload is the raw request body (Content-Type: application/zip), not multipart, because python-multipart could not be installed (no network); this also lets the size cap be enforced while streaming. (4) Analysis runs synchronously inside the request (static parsing only, nothing executed or extracted) and returns 201 instead of the designed 202; the job queue arrives in Stage 7.
+Implemented: projects (create / list / get / edit / archive; creator becomes owner; archived projects are read-only); membership (GET/PUT/DELETE, read < run < manage); ZIP source registration POST /projects/{id}/sources/zip?name=; source list / deactivate; analyses POST /projects/{id}/analyses {source_id}, GET list, GET /analyses/{id}. Archive validation (services/archive.py): size cap enforced while streaming, ZIP magic, entry-count and total-uncompressed caps, compression-ratio (bomb) check, rejects traversal/absolute/backslash/drive/control-character/bidi names, over-deep or over-long paths, symlinks and special files, encrypted entries, non-stored/deflated compression, duplicate and case-folded duplicate names; error messages never echo entry names; archives are never extracted and nothing from them is executed. Storage (services/artifact_store.py): server-generated keys, root-escape and symlink-escape refusal, file mode 0640, artifacts row with SHA-256, hash re-verified before every analysis. Analyzer (services/analyzer.py, version 1.0.0): detects languages, frameworks, test tools, coverage tools, test files, lockfiles, config files (Docker, CI, OpenAPI, ...) and package scripts from file names and bounded manifest reads (package.json, requirements*.txt, pyproject.toml, go.mod, pom.xml, build.gradle, Gemfile, composer.json); output has separate `facts` (with evidence paths), `inferences` (confidence + basis), `gaps` (unavailable evidence and coverage gaps) and `warnings`; .env/key-like files are flagged by name only, contents never read or stored; output is a pure, sorted function of the bytes, so repeating an analysis gives an identical result. Authorization: role permission (new SOURCE_MANAGE, PROJECT_ANALYZE) AND project access level on every route (read: view; run: analyse; manage: edit, members, sources, upload); unknown and inaccessible projects/sources/analyses are indistinguishable 404s; child ids are always looked up with project_id; Admin has no implicit access; Super Admin access without an own grant writes project.privileged_access, and listing all projects writes project.list_all. Audit: project.create/update/archive/member_set/member_remove, source.create/upload (failure with reason)/deactivate, analysis.run, project.privileged_access.
+Database changes: NONE. No migration; existing public.projects, project_memberships, artifacts, project_sources and analysis_snapshots are used as designed (analysis output is stored in analysis_snapshots.detected, content hash in content_sha256). The real sentinel-ai database was not touched.
+Changed/added: backend/src/sentinel_ai/{services/archive.py, services/analyzer.py, services/artifact_store.py, services/projects.py, services/project_access.py (+is_privileged_only), repositories/projects.py, schemas/projects.py, api/projects.py, api/deps.py (privileged-access audit), core/permissions.py, core/config.py (artifact_root), main.py}; pyproject.toml (per-file E501 exemption for analyzer data tables); tests: tests/unit/{test_archive_validation,test_analyzer,test_artifact_store}.py, tests/integration/test_projects_api.py, helpers in tests/support.py, header-copy fix in tests/integration/conftest.py; docs.
+Commands actually run (backend/): pytest with a disposable PostgreSQL 17 (database sentinel_ai_test) and without it; ruff check; ruff format --check; mypy.
+Results: with the disposable DB 146 passed (1 upstream httpx warning); without it 81 passed, 65 skipped (DB tests skip by design); ruff clean; format clean (55 files); mypy clean (36 source files). These are DISPOSABLE-DATABASE results only; nothing was verified against the live sentinel-ai database, a running server, or a browser.
+Defects found and fixed while testing: the validator wrongly rejected ZIPs whose Unix mode has no file-type bits (as written by Python's zipfile); a test helper mutated shared headers (test-only).
+Acceptance criteria: (1) Facts distinguished from inferences - met (separate sections, evidence vs basis/confidence; tested). (2) Invalid or oversized input rejected safely - met for ZIP uploads (tested: not-a-zip, truncated, traversal, absolute path, empty, bomb, too many files, oversize by header and while streaming, wrong content type, control characters; no file or row left behind; failures audited). (3) Project/source ownership enforced - met (cross-user, cross-project-child, membership-level, Admin, Super Admin tests). (4) Repeatable analysis persisted and visible - met (identical result on re-run, stored in analysis_snapshots, readable via API). The sub-items "Git/URL input types" are explicitly incremental per the plan and remain open.
+Known issues / owner actions: Q36-Q38 in OPEN_QUESTIONS. Optionally set ARTIFACT_STORAGE_DIR (default backend/artifacts, git-ignored), UPLOAD_MAX_MB (100), ZIP_MAX_UNCOMPRESSED_MB (500), ZIP_MAX_FILES (20000).
+Next action: owner review/commit. Stage 6 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 5 (completion)
+Status: DONE pending owner review. Remaining Stage 5 items implemented; items that depend on later stages are documented, not built.
+Implemented now: POST /projects/{id}/sources (JSON) for git_repository {git_url, git_ref?}, localhost_url {target_url} and remote_url {target_url, environment}. Validation (services/source_validation.py, pure functions, no DNS or network): Git URLs must be public https:// with no credentials, no query/fragment, default port, repository path; refs must be plain branch/tag names (cannot start with '-', no '..', '@{', spaces, shell characters); localhost URLs must be exactly localhost / 127.0.0.1 / [::1]; remote URLs must be public http(s) dev or staging hosts. All sources reject credentials, private/loopback/link-local/metadata IPs (including IPv4-mapped IPv6 and decimal/hex IPv4 tricks), single-label and internal-looking names (.local, .internal, .cluster.local, ...), control characters and over-long URLs. Production remote targets are refused (production_blocked, audited as denied) because production testing is blocked by default. Registration writes only a project_sources row (the existing CHECK constraints agree with the validators); nothing is fetched, cloned, resolved or probed, and no target_authorization is created. Analysing these source types returns 422 analysis_not_available with the reason and creates no snapshot (no invented results). Also: stale upload temp files are purged at startup and by `python -m sentinel_ai.cli purge-temp`.
+Open questions reviewed: Q36 narrowed (registration done; analysis of Git needs a sandboxed clone + Q25 credentials, localhost needs Q26, remote needs Stage 6 authorization + Stage 8 sandbox with DNS re-resolution at use time); Q37 deferred to Stage 7 (needs the job queue); Q38 decided: keep the raw application/zip upload, no multipart dependency unless the frontend needs it; Q39 temp-file half resolved, retention sweep deferred (needs run history from Stage 7+).
+Database changes: NONE (no migration; existing project_sources columns and CHECKs used).
+Changed/added: services/source_validation.py (new), services/projects.py (register_url_source, analysis_not_available), services/artifact_store.py (purge_stale_temp), repositories/projects.py, schemas/projects.py, api/projects.py, main.py (startup purge), cli.py (purge-temp); tests: tests/unit/test_source_validation.py, additions to tests/unit/test_artifact_store.py and tests/integration/test_projects_api.py.
+Commands actually run (backend/): pytest with a disposable PostgreSQL 17 (database sentinel_ai_test) and without it; ruff check; ruff format --check; mypy.
+Results (DISPOSABLE database only; nothing run against the live sentinel-ai database, a live server, or a browser): 184 passed (1 upstream httpx warning); without the database 116 passed, 68 skipped; ruff clean; format clean (57 files); mypy clean (37 source files).
+Acceptance criteria: unchanged from the earlier Stage 5 entry and still met: facts vs inferences; invalid/oversized input rejected safely (now also for Git/URL descriptors, tested incl. SSRF-style hosts and a no-network assertion); ownership enforced (access-level and cross-user tests also cover URL sources); repeatable persisted analysis (ZIP).
+Not done / depends on later stages: analysis of Git / localhost / remote sources; target_authorizations and approval (Stage 6); sandboxed clone and probing (Stage 8); credentials for private repositories (Q25); async analysis (Q37); frontend intake screens; team_id on project creation (teams have no routes yet).
+Owner actions: add the .env lines listed in the report (backend/.env.example is outside what Claude may read or edit in this environment, so it was NOT updated by Claude).
+Next action: owner review and commit of Stages 4-5. Stage 6 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: tracking restructure (documentation only)
+Status: no stage status changed
+Changes made: IMPLEMENTATION_PLAN.md reduced to stage list with status (Pending / Ongoing / Completed), next action, requirements and acceptance criteria; the long per-stage status text, the Stage 0 first-release scope block, the progress-update template and the progress log were moved here without loss. CLAUDE.md files keep permanent instructions only; README status lines point to this file.
+Application code: not modified. Stage 6: not started.
+```

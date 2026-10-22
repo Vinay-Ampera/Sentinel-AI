@@ -1,6 +1,6 @@
 # Frontend Instructions (React / Vite / JavaScript)
 
-Read the root `CLAUDE.md` first. Status: Stage 1 scaffold (static heading only; no features).
+Read the root `CLAUDE.md` first. Current implementation status is in `docs/PROJECT_TRACKER.md`.
 
 ## Stack (initial decisions, see ADR-0001)
 React + Vite + JavaScript, React Router, CSS variables with a consistent component system (UI library only if it clearly helps and is accessible).

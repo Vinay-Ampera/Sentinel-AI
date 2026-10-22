@@ -1,6 +1,6 @@
 # ADR-0002: Authentication and Sessions
 
-- **Status:** Proposed (2026-10-22) — Stage 2 default; needs owner confirmation (OPEN_QUESTIONS Q5)
+- **Status:** Accepted and implemented in Stage 4 (2026-10-22). The owner instructed Stage 4 to follow this design; no objection recorded to the Stage 2 proposal.
 - **Date:** 2026-10-22
 
 ## Context
@@ -21,3 +21,10 @@ Blueprint requires Developer/Admin/Super Admin roles with server-enforced author
 
 ## Alternatives considered
 Stateless JWT access tokens (harder revocation), OAuth/SSO only (not requested), database-stored plaintext tokens (rejected).
+
+## Implementation notes (Stage 4)
+- The CSRF token is `HMAC(pepper, "csrf-token:" + session_token)`; only its keyed hash is stored (`csrf_token_hash`), so `GET /auth/me` can re-issue it and it is useless without the session cookie.
+- Cookie and CSRF checks use constant-time comparison; `Origin`, when present on state-changing requests, must be in `CORS_ALLOWED_ORIGINS`.
+- Login failures (unknown, inactive, locked, wrong password) return one identical 401; the reason is audit-only. A dummy Argon2 verify equalises timing for unknown accounts.
+- The client IP is the direct peer address; `X-Forwarded-For` is not trusted until a trusted-proxy setting exists.
+- The per-IP rate limiter is in-process (per worker); the database lockout is the authoritative brute-force control.

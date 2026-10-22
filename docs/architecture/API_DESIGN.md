@@ -66,11 +66,11 @@ All errors:
 | `PATCH /projects/{id}` | Edit name/description/team/team_access | manage |
 | `POST /projects/{id}/archive` | Archive | manage |
 | `GET/PUT/DELETE /projects/{id}/members/{user_id}` `{access_level}` | Project membership | manage |
-| `POST /projects/{id}/sources` — JSON for `git_repository` `{git_url,git_ref?}`, `localhost_url` `{target_url}`, `remote_url` `{target_url,environment}`; multipart for `zip_upload` | Register input source | manage |
+| `POST /projects/{id}/sources/zip?name=` — raw `application/zip` body (implemented, Stage 5; multipart deferred, Q38). `POST /projects/{id}/sources` JSON for `git_repository` `{git_url,git_ref?}`, `localhost_url` `{target_url}`, `remote_url` `{target_url,environment}` (implemented: descriptor only, strict validation, nothing contacted, production refused; analysis of these types waits for Stage 6/8, Q36) | Register input source | manage |
 | `GET /projects/{id}/sources`, `DELETE /projects/{id}/sources/{sid}` | List / deactivate | read / manage |
 | `POST /projects/{id}/sources/{sid}/authorizations` `{environment,scope{hosts,paths,methods},allowed_risk,valid_from,valid_until,justification}` → `202` | Request authorization for a remote target | manage |
 | `POST /authorizations/{aid}/decision` `{decision,note}` | Approve/reject (not by requester; production needs S + policy enabled) | A S |
-| `POST /projects/{id}/analyses` `{source_id}` → `202 analysis_snapshot` | Analyze source (read-only, in sandbox for code) | run |
+| `POST /projects/{id}/analyses` `{source_id}` → `201 analysis_snapshot` (synchronous static analysis of a ZIP source until Stage 7 makes it `202`; Q37) | Analyze source (read-only; nothing is executed or extracted) | run |
 | `GET /projects/{id}/analyses`, `GET /analyses/{id}` | Snapshots | read |
 
 ### Test plans and approvals

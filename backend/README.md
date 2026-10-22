@@ -1,6 +1,6 @@
 # Sentinel AI — Backend
 
-FastAPI service. Status: Stage 1 scaffold (health endpoint only). See `CLAUDE.md` and `../docs/IMPLEMENTATION_PLAN.md`.
+FastAPI service. See `CLAUDE.md`, `../docs/IMPLEMENTATION_PLAN.md` (stages) and `../docs/PROJECT_TRACKER.md` (current status).
 
 ## Prerequisites
 Python 3.12, Poetry.
@@ -23,7 +23,7 @@ Names, defaults, and placeholders are in `.env.example`; real values go only in 
 |---|---|---|
 | `DATABASE_URL` | Alembic and the app (database `sentinel-ai`) | yes (contains password) |
 | `TEST_DATABASE_URL` | Integration tests; **must** name a disposable database ending in `_test` | yes |
-| `SESSION_TOKEN_PEPPER` | Sessions (Stage 4) | yes |
+| `SESSION_TOKEN_PEPPER` | Sessions (>= 32 random chars; auth endpoints return 503 without it) | yes |
 | `GEMINI_API_KEY` | LLM calls (Stage 11) | yes |
 | `REDIS_URL` | Readiness probe now; Celery (Stage 7) | yes if it has a password |
 | Others (`APP_ENV`, `SESSION_*`, `LLM_*`, `ARTIFACT_*`, `UPLOAD_*`, `ZIP_*`, `CORS_ALLOWED_ORIGINS`) | later stages | no |
@@ -64,3 +64,21 @@ poetry run alembic downgrade -1                  # roll back one revision (drops
 TEST_DATABASE_URL=... poetry run pytest tests/integration   # disposable DB only
 ```
 Schema design: `docs/DATABASE_SCHEMA.md`. Back up (`pg_dump`) before upgrading or downgrading a database that holds real data.
+
+## Authentication (Stage 4)
+Create the first Super Admin (password is prompted, never passed as an argument): `poetry run python -m sentinel_ai.cli create-super-admin --email you@example.com --display-name "Your Name"`. Endpoints: `POST /api/v1/auth/login|logout|password`, `GET /api/v1/auth/me|sessions`, `DELETE /api/v1/auth/sessions/{id}`, `GET /api/v1/users`, `POST /api/v1/admin/users`, `PATCH /api/v1/admin/users/{id}`. State-changing requests need the `X-CSRF-Token` returned by login / `/auth/me`. Optional tuning: `SESSION_IDLE_MINUTES`, `SESSION_ABSOLUTE_HOURS`, `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`, `LOGIN_IP_MAX_ATTEMPTS_PER_MINUTE`.
+
+## Projects and analysis (Stage 5)
+`POST /api/v1/projects`, `GET /projects[/{id}]`, `PATCH /projects/{id}`, `POST /projects/{id}/archive`, members at `/projects/{id}/members[/{user_id}]`. Upload a ZIP with `POST /projects/{id}/sources/zip?name=NAME` (body = the raw ZIP, `Content-Type: application/zip`, plus `X-CSRF-Token`), e.g. `curl -b cookies.txt -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/zip" --data-binary @src.zip "http://localhost:8000/api/v1/projects/$PID/sources/zip?name=src"`. Then `POST /projects/{id}/analyses {"source_id": ...}`; read results with `GET /projects/{id}/analyses` or `GET /analyses/{id}`. Uploads are stored under `ARTIFACT_STORAGE_DIR` (default `backend/artifacts`, git-ignored) and limited by `UPLOAD_MAX_MB`, `ZIP_MAX_UNCOMPRESSED_MB` and `ZIP_MAX_FILES`. Archives are never extracted or executed.
+
+Other source types are registered with `POST /api/v1/projects/{id}/sources` (JSON): `{"source_type":"git_repository","name":"repo","git_url":"https://github.com/org/repo.git","git_ref":"main"}`, `{"source_type":"localhost_url","name":"dev","target_url":"http://localhost:3000"}`, `{"source_type":"remote_url","name":"stg","target_url":"https://staging.example.com","environment":"staging"}`. Only a descriptor is stored: nothing is cloned, resolved or probed, production targets are refused, and analysing these types returns `analysis_not_available` until the sandbox and target-authorization stages exist. Remove abandoned upload temp files with `poetry run python -m sentinel_ai.cli purge-temp`.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ARTIFACT_STORAGE_BACKEND` | `local` | only `local` is implemented |
+| `ARTIFACT_STORAGE_DIR` | `./artifacts` (relative to `backend/`) | where uploaded ZIPs are stored |
+| `UPLOAD_MAX_MB` | `100` | maximum ZIP upload size |
+| `ZIP_MAX_UNCOMPRESSED_MB` | `500` | maximum declared uncompressed size |
+| `ZIP_MAX_FILES` | `20000` | maximum entries in an archive |
+| `LOGIN_IP_MAX_ATTEMPTS_PER_MINUTE` | `20` | per-IP sign-in rate limit |
+

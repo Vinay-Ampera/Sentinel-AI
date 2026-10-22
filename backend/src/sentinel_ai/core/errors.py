@@ -22,6 +22,23 @@ _CODES = {
 }
 
 
+class DomainError(Exception):
+    """An expected failure with a stable API error code (see docs/architecture/API_DESIGN.md)."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        details: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+        self.details = details
+
+
 def error_body(
     request: Request, code: str, message: str, details: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
@@ -42,6 +59,15 @@ def install_error_handlers(app: FastAPI) -> None:
         message = exc.detail if isinstance(exc.detail, str) else code
         return JSONResponse(
             error_body(request, code, message), status_code=exc.status_code, headers=exc.headers
+        )
+
+    @app.exception_handler(DomainError)
+    async def _domain(request: Request, exc: DomainError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Session"} if exc.status_code == 401 else None
+        return JSONResponse(
+            error_body(request, exc.code, exc.message, exc.details),
+            status_code=exc.status_code,
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)

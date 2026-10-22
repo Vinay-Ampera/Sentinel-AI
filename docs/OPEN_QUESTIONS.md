@@ -4,14 +4,14 @@ Updated 2026-10-22 (Stage 2). Resolve via ADR or tracker update.
 
 ## Resolved
 - **Q1 Blueprint missing:** `docs/Sentinel_AI_Full_Project_Blueprint.md` now exists, byte-identical to `~/Downloads/Sentinel_AI_Full_Project_Blueprint_Updated.md`. Follow-up: ADR-0001 and architecture drafts are not yet cross-checked against it.
-- **Q2 File naming:** `docs/IMPLEMENTATION_PLAN.md` is now the complete plan plus tracker; the duplicate `Sentinel_AI_IMPLEMENTATION_PLAN.md` and the redundant `Sentinel_AI_Project_Overview.md` were removed.
+- **Q2 File naming:** `docs/IMPLEMENTATION_PLAN.md` is the plan (stage list, requirements, acceptance criteria) and `docs/PROJECT_TRACKER.md` holds detailed progress; the duplicate `Sentinel_AI_IMPLEMENTATION_PLAN.md` and the redundant `Sentinel_AI_Project_Overview.md` were removed.
 - **Q3 settings.json meanings:** root `settings.json` = product guardrails; `.claude/settings.json` = Claude Code permissions.
 - **Q4 Execution path:** using `backend/src/sentinel_ai/execution/` (the tree path).
 
 ## Open
 | # | Question | Blocks Stage 1? | Proposed handling |
 |---|---|---|---|
-| Q5 | Authentication/session mechanism and permission matrix | No | **Stage 2 design done, awaiting owner confirmation:** ADR-0002 (Argon2id + server-side sessions + CSRF; no SSO) and the matrix in SECURITY_AND_SAFETY. Confirm or amend before Stage 4 |
+| Q5 | Authentication/session mechanism and permission matrix | No | **Implemented in Stage 4 on the owner's instruction to follow the documented design (ADR-0002 Accepted).** Original note: ADR-0002 (Argon2id + server-side sessions + CSRF; no SSO) and the matrix in SECURITY_AND_SAFETY. Confirm or amend before Stage 4 |
 | Q6 | Sandbox isolation level (Docker vs rootless/gVisor/Kata/VM) | No (Stage 8) | Threat-model first |
 | Q7 | ~~First-release scope~~ **Resolved 2026-10-22** (see Stage 0 decisions below). Residual: repository providers beyond generic Git; localhost-URL access from a sandbox | No | Stage 2 design |
 | Q8 | Celery+Redis cancel/retry/restart/duplicate behavior | No (Stage 7) | Proof of concept |
@@ -67,4 +67,19 @@ Q15–Q24 remain open; Stage 2 partially addressed: Q16 (tracker restructure not
 | Q31 | ~~Redis required for readiness?~~ **Resolved 2026-10-22:** Redis stays reported but not required for readiness until Stage 7 (owner reports it is currently unavailable locally; the API is otherwise healthy). Revisit with the Celery proof of concept (Q8) | Closed | — |
 | Q32 | Compose Redis/dev-PostgreSQL services are config-validated but not started; Redis unavailable locally | Stage 7 | **Deferred to Stage 7 by owner decision**; start with `docker compose up -d redis` then and record the result |
 Resolved in Stage 3: Q9-era toolchain gap "baseline lint/format/type/test commands" (Makefile + README); Q24 unchanged. Q28: owner reports live migrations and health endpoints work against sentinel-ai (2026-10-22); recorded as owner-reported, not Claude-verified.
+
+## Stage 4 additions (2026-10-22)
+| # | Question | Blocks | Handling |
+|---|---|---|---|
+| Q33 | Password breach/common-password check is a small built-in list, not a breach corpus (e.g. a local HIBP k-anonymity list) | Production | Decide corpus before production |
+| Q34 | `GET /users` is Admin/Super Admin only; API_DESIGN allows "limited" Developer visibility (members of shared teams/projects), deferred until projects/teams have routes. Admin scope is still "no implicit global access"; the delegation model for Admin approvals is a Stage 6 detail. Q27 (matrix confirmation) is treated as accepted by the Stage 4 instruction; policy-dependent matrix rows default to deny | Stage 5/6 | Implement with project/team routes |
+| Q35 | Password reset tokens (`POST /admin/users/{id}/reset-password`, `password_reset_tokens` table) and team management routes not built; Admin-created users get an initial password supplied by the admin (no forced change yet). Q30 resolved: Super Admin bootstrap is `python -m sentinel_ai.cli create-super-admin` | Later | Build with the admin UI |
+
+## Stage 5 additions (2026-10-22)
+| # | Question | Blocks | Handling |
+|---|---|---|---|
+| Q36 | **Narrowed 2026-10-22:** Git / localhost / remote-URL sources are registered and validated (no network). Still open: *analysis* of them. Git needs a sandboxed clone (no hooks, depth/size limits, egress allow-list) and the credentials design (Q25); localhost needs Q26; remote URLs need an approved target authorization (Stage 6) and Stage 8 sandbox with DNS re-resolution at use time | Stage 6/8 | Implement with those stages |
+| Q37 | Analysis is synchronous and returns 201 (API_DESIGN says 202 + polling). **Deferred to Stage 7** (job queue); the result schema will not change | Stage 7 | Move to a job |
+| Q38 | **Resolved 2026-10-22:** keep the raw `application/zip` upload (streamed size cap, no extra dependency). Reopen only if the frontend needs multipart | Closed | - |
+| Q39 | Temp-file half **resolved** (startup purge + `cli purge-temp`). Open: retention sweep for uploaded archives (proposal: 30 days after the last run) needs run history | Stage 7+ | Retention sweeper |
 

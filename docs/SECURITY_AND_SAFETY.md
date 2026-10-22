@@ -1,6 +1,6 @@
 # Security and Safety
 
-> Status: **Stage 2 design.** Auth/session mechanism is proposed in ADR-0002 (awaiting owner confirmation, Q5). The sandbox threat model is still required before untrusted code runs (Q6, Stage 8).
+> Status: **Stage 4 implemented** for authentication, sessions, CSRF, lockout, the role matrix and user administration (ADR-0002, Accepted). Project-scoped and approval rules are enforced by `require_project_access` and `core/permissions.py` as those routes are built. The sandbox threat model is still required before untrusted code runs (Q6, Stage 8).
 
 ## Roles and permission matrix
 Roles live in `app_user.roles` (one role per user). Project access is separate and per-project (`read` < `run` < `manage`) via ownership, `project_memberships`, or team access. **Role grants capabilities; project access grants scope. Both must allow an action.**
@@ -26,8 +26,8 @@ Roles live in `app_user.roles` (one role per user). Project access is separate a
 
 "Admin scope" = projects the Admin owns, teams they own, and projects/teams explicitly delegated to them; the exact delegation model is a Stage 4 detail but the default is **no implicit global access for Admin**.
 
-## Authentication and sessions (ADR-0002, proposed)
-- Email + password; passwords hashed with **Argon2id** (`password_hash` stores the encoded string; minimum 12 chars, breach/common-password check); no password is ever logged.
+## Authentication and sessions (ADR-0002, implemented in Stage 4)
+- Email + password; passwords hashed with **Argon2id** (`password_hash` stores the encoded string; minimum 12 chars; built-in common-password list only, a breach corpus is Q33); no password is ever logged.
 - Server-side sessions: random 256-bit token in an `HttpOnly; Secure; SameSite=Lax` cookie; only a keyed hash (HMAC with `SESSION_TOKEN_PEPPER`) is stored in `app_user.sessions`. Idle timeout (default 30 min) and absolute timeout (default 12 h); logout and password change revoke sessions; token rotated on login.
 - CSRF: per-session token (hash stored) required in `X-CSRF-Token` for state-changing requests, plus `SameSite` cookies and Origin checking.
 - Brute-force controls: per-account failure counter + `locked_until`, per-IP rate limits, uniform error messages (no account enumeration), audit of failures.

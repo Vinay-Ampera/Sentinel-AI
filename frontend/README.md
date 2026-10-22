@@ -1,6 +1,6 @@
 # Sentinel AI — Frontend
 
-React + Vite + JavaScript. Status: Stage 1 scaffold (static heading only). See `CLAUDE.md` and `../docs/IMPLEMENTATION_PLAN.md`.
+React + Vite + JavaScript. See `CLAUDE.md`, `../docs/IMPLEMENTATION_PLAN.md` (stages) and `../docs/PROJECT_TRACKER.md` (current status).
 
 ## Prerequisites
 Node.js 24, npm.
