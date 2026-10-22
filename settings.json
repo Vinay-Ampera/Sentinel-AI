@@ -1,8 +1,12 @@
 {
   "project_name": "Sentinel AI",
   "project_status": "setup",
-  "implementation_stage": "Stage 1 - Initialize repository and Claude context (scaffold complete, pending review)",
-  "supported_application_types": [],
+  "implementation_stage": "Stage 3 - Local development services and configuration (complete pending owner review)",
+  "supported_application_types": [
+    "web apps",
+    "REST APIs",
+    "AI apps (RAG/agents)"
+  ],
   "in_scope_capabilities": [
     "project analysis",
     "test planning with risk-based approval",
@@ -36,14 +40,30 @@
     "automatic retry of destructive tests"
   ],
   "decisions_pending": [
-    "first-release scope and supported application types",
-    "authentication/session mechanism and permission matrix",
-    "initial source-input method and repository providers",
     "Celery+Redis proof of concept",
     "sandbox isolation level",
     "artifact storage provider",
     "Gemini model and token budgets",
     "CI checks and runtime versions",
-    "production topology and secrets management"
+    "production topology and secrets management",
+    "repository providers beyond generic Git",
+    "localhost URL access from sandbox",
+    "confirm ADR-0002 auth and permission matrix",
+    "admin scope delegation model",
+    "apply migrations to the real sentinel-ai database"
+  ],
+  "supported_inputs": [
+    "Git repository",
+    "ZIP upload",
+    "localhost URL",
+    "live development/staging URL"
+  ],
+  "testing_modes": [
+    "automatic recommendations",
+    "prompt-based planning",
+    "developer-defined tests/scripts"
+  ],
+  "excluded_from_initial_release": [
+    "MiroFish"
   ]
 }

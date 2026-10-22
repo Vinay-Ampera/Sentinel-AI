@@ -20,4 +20,4 @@ Code lives in `src/sentinel_ai/`: `api/` (routes, thin) → `services/` (applica
 - Do not install target-project dependencies in this Poetry environment.
 
 ## Commands (run from `backend/`; verified in Stage 1)
-`poetry install`, `poetry run pytest`, `poetry run ruff check .`, `poetry run ruff format --check .`, `poetry run mypy`, `poetry run uvicorn sentinel_ai.main:app --reload`, `poetry run alembic ...` (Alembic initialized in `migrations/`; DB URL configured in Stage 3). Python 3.12.
+`poetry install`, `poetry run pytest`, `poetry run ruff check .`, `poetry run ruff format --check .`, `poetry run mypy`, `poetry run uvicorn sentinel_ai.main:create_app --factory --reload`, `make check`, `poetry run alembic ...` (migrations in `migrations/versions/`; URL from `DATABASE_URL` only (env, then untracked `backend/.env`, via `sentinel_ai.core.config`); DB integration tests need a disposable `TEST_DATABASE_URL` ending `_test`). Python 3.12.
