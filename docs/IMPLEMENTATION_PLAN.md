@@ -836,6 +836,25 @@ This section lists only each stage's status, next action, requirements and accep
 - Production configuration has been reviewed for secrets, network exposure, persistence, TLS, and operational needs.
 - Deployment claims match what has actually been tested.
 
+## 16b. Frontend Track (separate from the stage list)
+
+Owner decision 2026-10-23: the full frontend is built in its own phases F0-F9, tracked apart from Stages 0-16. **Stage 11 stays paused**; no frontend phase may start Stage 11 features. UI rules: [`architecture/ui-ux-design.md`](architecture/ui-ux-design.md) (top navbar only, no sidebar; Light/Dark/System themes; system font stack; WCAG 2.2 AA practices). Decisions: [ADR-0009](decisions/ADR-0009-frontend-foundation.md). Evidence per phase: PROJECT_TRACKER section 7. Each phase starts only after the owner approves the previous one.
+
+| Phase | Scope | Status | Next action |
+|---|---|---|---|
+| F0 | Foundation: design tokens, themes, router, navbar shell, shared components, status vocabulary, a11y test harness | Completed (owner approved by starting F1, 2026-10-23) | None. |
+| F1 | Public homepage, sign-in page, informational Request Access page | Ongoing (implemented and checked; awaiting owner review) | Owner browser review (checklist in PROJECT_TRACKER). |
+| F2 | Auth and account (sign-in flow, route protection, session expiry, password, sessions) | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F3 | Projects, overview (composed from existing endpoints), setup (sources, members), analysis | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F4 | Test plans and approvals | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F5 | Runs, results, evidence: run history and start, test execution report, result detail with cases and evidence (designed from ui-ux-design.md; the owner's screenshot was never available) | Ongoing (implemented and checked; awaiting owner review) | Owner browser review (checklist in PROJECT_TRACKER). |
+| F6 | Security findings (filters, summary, table, detail, review, linked duplicates) | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F7 | Governance (authorizations, policy, break-glass) and admin (users, organization policy) | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F8 | Roadmap page: clearly labelled planned features (Stages 11-16), read-only | Ongoing (implemented and checked; awaiting owner review) | Owner browser review. |
+| F9 | Accessibility, responsive and documentation hardening | Ongoing (axe checks on the main pages and fixes done; visual and manual checks by the owner still needed) | Owner manual pass (checklist in PROJECT_TRACKER). |
+
+**F0 acceptance criteria:** light/dark/system themes persist and do not flash; responsive top navbar with keyboard operation and no sidebar; shared components handle loading, error, empty and permission-denied states; one status vocabulary that never relies on colour alone; existing plans/runs/findings panels still work; lint, tests and build pass.
+
 ## 17. Progress Tracking
 
 Progress updates (dates, commands run, test results, changed files, decisions, remaining work) are recorded in [`PROJECT_TRACKER.md`](PROJECT_TRACKER.md), which also holds the update template. Keep one current status per stage here; use Git history and `docs/decisions/` for historical detail.

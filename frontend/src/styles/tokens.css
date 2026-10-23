@@ -1,0 +1,107 @@
+/* Design tokens. Components use these variables only; no hard-coded colours elsewhere.
+   `data-theme` on <html> is always the *resolved* theme ("light" or "dark"). It is set before
+   first paint by the inline script in index.html and kept current by theme/ThemeContext.jsx.
+   Without it (script blocked) the light tokens below apply. */
+
+:root {
+  /* Surfaces and text */
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-muted: #f4f4f5;
+  --border: #e4e4e7;
+  --border-strong: #858590; /* control borders: 3:1 against surfaces */
+  --text: #111113;
+  --text-muted: #52525b;
+
+  /* One restrained accent: primary actions and selected states */
+  --accent: #111113;
+  --accent-contrast: #fafafa;
+  --accent-bg: #f0f0f2;
+  --accent-border: #71717a;
+  --focus: #111113;
+
+  /* Semantic colours, muted. Always paired with a text label and an icon. */
+  --success-fg: #166534;
+  --success-bg: #ecf7ef;
+  --success-border: #86c79b;
+  --danger-fg: #b42318;
+  --danger-bg: #fef0ee;
+  --danger-border: #f0a59d;
+  --warning-fg: #8a5200;
+  --warning-bg: #fdf4e0;
+  --warning-border: #e2b866;
+  --info-fg: #1e4f9c;
+  --info-bg: #eaf1fc;
+  --info-border: #9db9e6;
+
+  --grid-line: rgba(0, 0, 0, 0.045); /* faint technical grid behind the hero */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --overlay: rgba(0, 0, 0, 0.45);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b0b0c;
+  --surface: #141416;
+  --surface-muted: #1c1c1f;
+  --border: #2a2a2e;
+  --border-strong: #71717a;
+  --text: #f4f4f5;
+  --text-muted: #a1a1aa;
+
+  --accent: #f4f4f5;
+  --accent-contrast: #0b0b0c;
+  --accent-bg: #1f1f23;
+  --accent-border: #a1a1aa;
+  --focus: #f4f4f5;
+
+  --success-fg: #6ee7a0;
+  --success-bg: #0f2218;
+  --success-border: #2d6a45;
+  --danger-fg: #ff9d94;
+  --danger-bg: #2a1412;
+  --danger-border: #7a312b;
+  --warning-fg: #f3c969;
+  --warning-bg: #28200d;
+  --warning-border: #75591a;
+  --info-fg: #9cc0ff;
+  --info-bg: #121d31;
+  --info-border: #2f4f85;
+
+  --grid-line: rgba(255, 255, 255, 0.06);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.65);
+  color-scheme: dark;
+}
+
+:root {
+  /* System font stack: no web fonts are loaded. */
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Times New Roman', serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-hero: clamp(2.25rem, 6vw, 3.75rem);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-pill: 999px;
+
+  --gutter: clamp(1.25rem, 5vw, 4rem);
+  --content-width: 120rem; /* page content spans the screen up to 1920px; gutters keep text off the edge */
+  --control-height: 2.5rem; /* 40px: comfortable touch target (WCAG 2.2 minimum is 24px) */
+  --navbar-height: 3.5rem;
+}

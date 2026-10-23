@@ -1,0 +1,4 @@
+/* OverviewPanels.jsx styles. */
+.overview-card { margin-bottom: 0; }
+.overview-link { margin: var(--space-3) 0 0; font-size: var(--text-sm); }
+.overview-counts { list-style: none; padding: 0; margin: var(--space-3) 0 0; display: flex; flex-wrap: wrap; gap: var(--space-3); }

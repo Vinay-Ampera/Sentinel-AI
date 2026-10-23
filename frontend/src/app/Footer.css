@@ -1,0 +1,20 @@
+/* Footer.jsx styles. Tokens only. */
+.footer { margin-top: var(--space-8); border-top: 1px solid var(--border-strong); background: var(--surface); }
+.footer-inner { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 0.7fr)) minmax(0, 1.2fr); gap: var(--space-6); padding-block: var(--space-7) var(--space-6); }
+.footer-name { display: flex; align-items: center; gap: var(--space-3); margin: 0; font-size: var(--text-lg); font-weight: 700; letter-spacing: -0.02em; }
+.footer-tagline { margin: var(--space-2) 0 var(--space-3); max-width: 22rem; font-family: var(--serif); font-style: italic; color: var(--text-muted); }
+.footer-tag { margin: 0; font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.15em; color: var(--text-muted); }
+.footer-heading { margin: 0 0 var(--space-3); font-family: var(--mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); }
+.footer-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.footer-col a { color: var(--text); text-decoration: none; }
+.footer-col a:hover { text-decoration: underline; }
+.footer-promise p { margin: 0; color: var(--text-muted); font-size: var(--text-sm); max-width: 26rem; }
+.footer-base { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2) var(--space-5); padding-block: var(--space-4); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--text-sm); }
+
+@media (max-width: 60rem) {
+  .footer-inner { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .footer-brand, .footer-promise { grid-column: 1 / -1; }
+}
+@media (max-width: 30rem) {
+  .footer-inner { grid-template-columns: 1fr; gap: var(--space-5); padding-block: var(--space-6) var(--space-5); }
+}

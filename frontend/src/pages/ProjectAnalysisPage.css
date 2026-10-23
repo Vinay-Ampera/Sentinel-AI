@@ -1,0 +1,4 @@
+/* ProjectAnalysisPage.jsx styles. */
+.analysis-run { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.analysis-run .field { margin-bottom: 0; min-width: 16rem; }
+.analysis-selected-title { margin-top: var(--space-5); font-size: var(--text-base); }

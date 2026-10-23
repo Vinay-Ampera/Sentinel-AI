@@ -1,0 +1,8 @@
+/* RoadmapList.jsx styles. */
+.roadmap-grid { list-style: none; padding: 0; margin: var(--space-4) 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); border-top: 1px dashed var(--border-strong); border-left: 1px dashed var(--border-strong); }
+.roadmap-item { padding: var(--space-5); border-right: 1px dashed var(--border-strong); border-bottom: 1px dashed var(--border-strong); }
+.roadmap-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.roadmap-head h3 { margin: 0; font-size: var(--text-base); }
+.roadmap-note { font-weight: 600; }
+.roadmap-item p { color: var(--text-muted); }
+.roadmap-item ul { color: var(--text-muted); font-size: var(--text-sm); margin: 0; }

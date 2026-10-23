@@ -1,0 +1,2 @@
+/* EvidenceList.jsx styles. */
+.evidence-list { list-style: none; padding: 0; display: grid; gap: var(--space-3); }

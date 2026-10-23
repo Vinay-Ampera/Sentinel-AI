@@ -1,0 +1,2 @@
+/* ProjectsPage.jsx styles. */
+.projects-filter { display: inline-flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); font-weight: 400; }

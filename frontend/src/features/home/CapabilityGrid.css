@@ -1,0 +1,21 @@
+/* CapabilityGrid.jsx styles: the same bordered grid as the workflow steps. */
+.capabilities { padding-block: var(--space-7); border-top: 1px solid var(--border); scroll-margin-top: var(--navbar-height); }
+.capability-grid { list-style: none; padding: 0; margin: var(--space-4) 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); border-top: 1px solid var(--border-strong); border-left: 1px solid var(--border-strong); }
+.capability { padding: var(--space-5); border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); transition: background-color 0.2s ease, transform 0.2s ease; }
+.capability:hover { background: var(--surface); transform: translateY(-1px); }
+.capability-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.capability-head h3 { margin: 0; font-size: var(--text-base); }
+.capability p { margin: 0; color: var(--text-muted); }
+.capabilities-planned-title { margin-top: var(--space-6); }
+.capability-grid-planned { border-style: dashed; }
+.capability-grid-planned .capability { border-right-style: dashed; border-bottom-style: dashed; }
+@media (prefers-reduced-motion: reduce) { .capability:hover { transform: none; } }
+
+/* Fill whole rows on wide screens so the bordered grid has no ragged, open edges:
+   six available items in 3 columns, five planned items in 5 columns. */
+@media (min-width: 72rem) {
+  .capability-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 90rem) {
+  .capability-grid-planned { grid-template-columns: repeat(5, 1fr); }
+}

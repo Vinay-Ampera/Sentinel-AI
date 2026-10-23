@@ -1,0 +1,6 @@
+/* AnalysisReport.jsx styles. */
+.analysis h3 { margin-top: var(--space-5); font-size: var(--text-base); }
+.analysis-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.analysis-list { padding-left: 1.1rem; display: grid; gap: var(--space-3); }
+.analysis-details { margin-bottom: var(--space-3); }
+.mono-list { padding-left: 1.1rem; margin-top: var(--space-2); }

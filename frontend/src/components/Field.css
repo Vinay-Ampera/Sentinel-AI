@@ -1,0 +1,5 @@
+/* Field.jsx styles. Tokens only; see styles/tokens.css. */
+.field { display: grid; gap: var(--space-1); margin-bottom: var(--space-4); }
+.field-hint { margin: 0; font-size: var(--text-sm); color: var(--text-muted); }
+.field-required { font-weight: 400; color: var(--text-muted); font-size: var(--text-sm); }
+.field-error { margin: 0; font-size: var(--text-sm); color: var(--danger-fg); font-weight: 500; }

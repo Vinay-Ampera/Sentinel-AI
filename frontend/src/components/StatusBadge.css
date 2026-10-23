@@ -1,0 +1,23 @@
+/* StatusBadge.jsx styles. Tokens only; see styles/tokens.css. */
+.status-wrap { display: inline-flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.status-note { font-size: var(--text-sm); color: var(--text-muted); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.badge-neutral { color: var(--text-muted); }
+.badge-success { background: var(--success-bg); color: var(--success-fg); border-color: var(--success-border); }
+.badge-danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+.badge-warning { background: var(--warning-bg); color: var(--warning-fg); border-color: var(--warning-border); }
+.badge-info { background: var(--info-bg); color: var(--info-fg); border-color: var(--info-border); }
+.badge-planned { background: transparent; color: var(--text-muted); border-style: dashed; border-color: var(--border-strong); }

@@ -5,6 +5,14 @@ const BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 let csrfToken = null
+let unauthorizedHandler = null
+
+// Called when an authenticated request comes back 401 (the session ended). Sign-in and the
+// session probe are excluded: a 401 there is a normal answer, not an expiry.
+export function setUnauthorizedHandler(fn) {
+  unauthorizedHandler = fn
+}
+const NOT_AN_EXPIRY = new Set(['/auth/login', '/auth/me'])
 
 export class ApiError extends Error {
   constructor(status, code, message, details = []) {
@@ -16,9 +24,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body, extraHeaders = {}) {
+async function request(method, path, body, extraHeaders = {}, raw = false) {
   const headers = { Accept: 'application/json', ...extraHeaders }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (body !== undefined && !raw) headers['Content-Type'] = 'application/json'
   if (UNSAFE.has(method) && csrfToken) headers['X-CSRF-Token'] = csrfToken
   let response
   try {
@@ -26,7 +34,7 @@ async function request(method, path, body, extraHeaders = {}) {
       method,
       headers,
       credentials: 'include',
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'network_error', 'Could not reach the server')
@@ -40,6 +48,7 @@ async function request(method, path, body, extraHeaders = {}) {
   }
   if (!response.ok) {
     const e = data && data.error
+    if (response.status === 401 && unauthorizedHandler && !NOT_AN_EXPIRY.has(path)) unauthorizedHandler()
     throw new ApiError(
       response.status,
       (e && e.code) || 'error',
@@ -65,6 +74,18 @@ export function checkPlan(plan) {
     plan.tests.every((t) => t && typeof t.id === 'string' && typeof t.status === 'string')
   if (!ok) throw bad('plan')
   return plan
+}
+
+function checkProject(p) {
+  const ok = p && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.status === 'string' && typeof p.application_type === 'string'
+  if (!ok) throw bad('project')
+  return p
+}
+
+function checkSnapshot(a) {
+  const ok = a && typeof a.id === 'string' && typeof a.status === 'string' && a.result && typeof a.result === 'object'
+  if (!ok) throw bad('analysis')
+  return a
 }
 
 export function checkRun(run) {
@@ -159,8 +180,109 @@ export const api = {
     await request('POST', '/auth/logout')
     csrfToken = null
   },
-  async listProjects() {
-    return checkItems(await request('GET', '/projects'), 'projects')
+  async listProjects(includeArchived = false) {
+    return checkItems(await request('GET', `/projects${includeArchived ? '?include_archived=true' : ''}`), 'projects').map(checkProject)
+  },
+  async createProject(body) {
+    return checkProject(await request('POST', '/projects', body))
+  },
+  async getProject(projectId) {
+    return checkProject(await request('GET', `/projects/${projectId}`))
+  },
+  async archiveProject(projectId) {
+    return checkProject(await request('POST', `/projects/${projectId}/archive`))
+  },
+  async listMembers(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/members`), 'members')
+  },
+  async setMember(projectId, userId, accessLevel) {
+    await request('PUT', `/projects/${projectId}/members/${userId}`, { access_level: accessLevel })
+  },
+  async removeMember(projectId, userId) {
+    await request('DELETE', `/projects/${projectId}/members/${userId}`)
+  },
+  async listUsers(q = '') {
+    return checkItems(await request('GET', `/users${q ? `?q=${encodeURIComponent(q)}` : ''}`), 'users')
+  },
+  async listSources(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/sources`), 'sources')
+  },
+  async addUrlSource(projectId, body) {
+    return request('POST', `/projects/${projectId}/sources`, body)
+  },
+  // The ZIP is sent as the raw request body (application/zip), as the backend expects. It is
+  // never read or unpacked in the browser.
+  async uploadZipSource(projectId, name, file) {
+    return request('POST', `/projects/${projectId}/sources/zip?name=${encodeURIComponent(name)}`, file, { 'Content-Type': 'application/zip' }, true)
+  },
+  async removeSource(projectId, sourceId) {
+    await request('DELETE', `/projects/${projectId}/sources/${sourceId}`)
+  },
+  async listAnalyses(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/analyses`), 'analyses').map(checkSnapshot)
+  },
+  async getAnalysis(analysisId) {
+    return checkSnapshot(await request('GET', `/analyses/${analysisId}`))
+  },
+  async runAnalysis(projectId, sourceId) {
+    return checkSnapshot(await request('POST', `/projects/${projectId}/analyses`, { source_id: sourceId }))
+  },
+  async listAuthorizations(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/authorizations`), 'authorizations')
+  },
+  async listFindingGroups(projectId) {
+    const data = await request('GET', `/projects/${projectId}/finding-groups`)
+    if (!Array.isArray(data)) throw bad('finding groups')
+    return data
+  },
+  async getEffectivePolicy(projectId) {
+    return request('GET', `/projects/${projectId}/policy`)
+  },
+  async getProjectPolicies(projectId) {
+    const data = await request('GET', `/projects/${projectId}/policies`)
+    if (!data || typeof data.items !== 'object') throw bad('policies')
+    return data
+  },
+  async setProjectPolicy(projectId, key, value) {
+    return request('PUT', `/projects/${projectId}/policies/${key}`, { value })
+  },
+  async getGlobalPolicies() {
+    const data = await request('GET', '/admin/policies')
+    if (!data || typeof data.items !== 'object') throw bad('policies')
+    return data.items
+  },
+  async setGlobalPolicy(key, value) {
+    return request('PUT', `/admin/policies/${key}`, { value })
+  },
+  async requestAuthorization(projectId, sourceId, body) {
+    return request('POST', `/projects/${projectId}/sources/${sourceId}/authorizations`, body)
+  },
+  async revokeAuthorization(projectId, authorizationId) {
+    return request('POST', `/projects/${projectId}/authorizations/${authorizationId}/revoke`)
+  },
+  async listBreakGlass(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/break-glass`), 'break-glass')
+  },
+  async grantBreakGlass(projectId, justification, minutes) {
+    return request('POST', `/projects/${projectId}/break-glass`, { justification, minutes })
+  },
+  async revokeBreakGlass(projectId, grantId) {
+    return request('POST', `/projects/${projectId}/break-glass/${grantId}/revoke`)
+  },
+  async createUser(body) {
+    return request('POST', '/admin/users', body)
+  },
+  async updateUser(userId, body) {
+    return request('PATCH', `/admin/users/${userId}`, body)
+  },
+  async changePassword(current, next) {
+    return request('POST', '/auth/password', { current, new: next })
+  },
+  async listSessions() {
+    return checkItems(await request('GET', '/auth/sessions'), 'sessions')
+  },
+  async revokeSession(sessionId) {
+    await request('DELETE', `/auth/sessions/${sessionId}`)
   },
   async listPlans(projectId) {
     return checkItems(await request('GET', `/projects/${projectId}/test-plans`), 'plans')
@@ -208,6 +330,20 @@ export const api = {
     const data = checkResult(await request('GET', `/test-runs/${runId}/results/${resultId}`))
     if (!Array.isArray(data.cases) || !Array.isArray(data.evidence)) throw bad('result detail')
     return data
+  },
+  async listRunBatches(runId) {
+    const data = await request('GET', `/test-runs/${runId}/batches`)
+    if (!Array.isArray(data)) throw bad('batches')
+    return data
+  },
+  async listRunEvents(runId, after = 0) {
+    const data = await request('GET', `/test-runs/${runId}/events?after=${after}`)
+    if (!Array.isArray(data)) throw bad('events')
+    return data
+  },
+  // Same-origin link to download an evidence file (the server sends it as an attachment).
+  evidenceUrl(artifactId) {
+    return `${BASE}/artifacts/${artifactId}/content`
   },
   async listFindings(projectId, filters = {}) {
     const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()

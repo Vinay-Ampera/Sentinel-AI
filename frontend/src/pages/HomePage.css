@@ -1,0 +1,5 @@
+/* HomePage.jsx styles. */
+.home-body { padding-bottom: var(--space-7); }
+.home-a11y { padding-block: var(--space-6); border-top: 1px solid var(--border); max-width: 46rem; }
+.home-cta { padding-block: var(--space-6); border-top: 1px solid var(--border); text-align: center; }
+.home-cta-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); }

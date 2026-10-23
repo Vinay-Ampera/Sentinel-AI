@@ -1,0 +1,6 @@
+/* TabNav.jsx styles. Tokens only; see styles/tokens.css. */
+.tab-nav { border-bottom: 1px solid var(--border); margin-bottom: var(--space-5); overflow-x: auto; }
+.tab-nav ul { display: flex; gap: var(--space-4); list-style: none; margin: 0; padding: 0; }
+.tab-link { display: inline-block; padding: var(--space-2) 0; color: var(--text-muted); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tab-link:hover { color: var(--text); }
+.tab-link[aria-current='page'] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }

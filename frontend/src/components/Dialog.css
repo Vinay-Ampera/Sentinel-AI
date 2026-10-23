@@ -1,0 +1,6 @@
+/* Dialog.jsx styles. Tokens only; see styles/tokens.css. */
+.dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: var(--space-4); background: var(--overlay); overflow-y: auto; }
+.dialog { width: min(32rem, 100%); max-height: 100%; overflow-y: auto; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); box-shadow: var(--shadow); }
+.dialog:focus { outline: none; }
+.dialog-title { font-size: var(--text-lg); }
+.dialog-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }

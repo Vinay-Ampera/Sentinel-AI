@@ -1,0 +1,30 @@
+/* Hero.jsx styles. */
+.hero { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: var(--space-4); overflow: hidden; }
+
+/* Faint line grid, strongest at the top and fading out (low opacity by design). */
+.hero-grid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, var(--grid-line) 1px, transparent 1px), linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 4rem 4rem;
+  -webkit-mask-image: radial-gradient(ellipse 75% 80% at 50% 25%, #000 55%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 80% at 50% 25%, #000 55%, transparent 100%);
+  pointer-events: none;
+}
+.hero > :not(.hero-grid) { position: relative; }
+
+.hero-ribbon { display: flex; justify-content: space-between; gap: var(--space-4); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); color: var(--text-muted); font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.1em; }
+.hero-copy { display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: clamp(2.5rem, 7vw, 5.5rem); }
+.hero-eyebrow { margin: 0 0 var(--space-4); color: var(--text-muted); font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.25em; }
+.hero-title { max-width: 22ch; margin: 0 0 var(--space-4); font-size: clamp(2.5rem, 6.4vw, 5rem); line-height: 1.05; letter-spacing: -0.035em; }
+.hero-title span { display: block; }
+.hero-title-light { font-weight: 300; }
+.hero-title-bold { font-weight: 700; }
+.hero-lede { max-width: 40rem; margin: 0 0 var(--space-5); font-size: clamp(1.05rem, 1.6vw, 1.25rem); font-weight: 300; color: var(--text-muted); }
+.hero-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.hero-button { min-height: 3rem; padding-inline: 1.6rem; border-radius: var(--radius-pill); font-size: var(--text-base); }
+.hero-link { padding: var(--space-2); color: var(--text-muted); font-size: var(--text-sm); }
+
+@media (max-width: 40rem) {
+  .hero-ribbon-mid { display: none; }
+}

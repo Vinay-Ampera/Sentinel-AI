@@ -1,0 +1,62 @@
+/* HeroVisual.jsx styles: tokens only. Everything that moves is switched off by .hv-static
+   (reduced motion or Pause) and held by [data-paused='true'] (off screen or tab hidden). */
+.hero-visual { position: relative; width: 100%; margin-top: clamp(1.5rem, 4vw, 3rem); }
+.hv { width: 100%; height: clamp(15rem, 25vw, 27rem); }
+.hv svg { display: block; width: 100%; height: 100%; }
+
+.hv-trace { fill: none; stroke: var(--text-muted); stroke-width: 1.75; opacity: 0.6; }
+.hv-dashed { stroke-dasharray: 6 8; animation: hv-flow 2.4s linear infinite; }
+.hv-geo { fill: none; stroke: var(--border-strong); stroke-width: 1.5; stroke-linecap: round; }
+.hv-geo .hv-faint, .hv-faint { opacity: 0.55; }
+.hv-plus { stroke: var(--text-muted); }
+.hv-dot { fill: var(--text-muted); stroke: none; }
+.hv-dot-warning { fill: var(--warning-fg); }
+.hv-square { stroke: none; }
+.hv-square-danger { fill: var(--danger-fg); }
+.hv-square-warning { fill: var(--warning-fg); }
+.hv-seg { fill: var(--success-fg); stroke: none; opacity: 0.22; animation: hv-seg 3s ease-in-out infinite; }
+.hv-seg-on { opacity: 0.85; }
+
+.hv-node circle { fill: var(--bg); stroke-width: 1.6; }
+.hv-node path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hv-pass circle, .hv-pass path { stroke: var(--success-fg); }
+.hv-fail circle, .hv-fail path { stroke: var(--danger-fg); }
+.hv-skip circle, .hv-skip path { stroke: var(--text-muted); }
+.hv-node.hv-fail circle { animation: hv-pulse 2.6s ease-in-out infinite; }
+.hv-junction { fill: var(--bg); stroke: var(--text); stroke-width: 1.6; }
+
+.hv-hex { fill: var(--surface); stroke: var(--text); stroke-width: 2; }
+.hv-ring-halo { fill: none; stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 7; }
+.hv-ring { fill: none; stroke-linecap: round; }
+.hv-ring-a { stroke: var(--success-fg); stroke-width: 5; stroke-dasharray: 300 253; }
+.hv-ring-b { stroke: var(--text-muted); stroke-width: 3; stroke-dasharray: 150 290; opacity: 0.8; }
+.hv-ring-c { stroke: var(--warning-fg); stroke-width: 3; stroke-dasharray: 70 270; }
+.hv-spin { transform-box: fill-box; transform-origin: center; animation: hv-spin 22s linear infinite; }
+.hv-spin-rev { animation-duration: 30s; animation-direction: reverse; }
+.hv-spin-fast { animation-duration: 12s; }
+.hv-spin-slow { transform-box: fill-box; transform-origin: center; animation: hv-spin 40s linear infinite; }
+.hv-panel { fill: var(--bg); stroke: var(--text); stroke-width: 1.5; }
+.hv-row circle { fill: none; stroke-width: 1.5; }
+.hv-row path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hv-row.hv-pass circle, .hv-row.hv-pass path:not(.hv-bar) { stroke: var(--success-fg); }
+.hv-row.hv-fail circle, .hv-row.hv-fail path:not(.hv-bar) { stroke: var(--danger-fg); }
+.hv-bar { stroke: var(--border-strong); stroke-width: 3; }
+.hv-scan { stroke: var(--text); stroke-width: 2; opacity: 0.55; stroke-linecap: round; transform: translateY(18px); animation: hv-scan 4s ease-in-out infinite alternate; }
+
+.hv-arrow { fill: var(--text); stroke: none; }
+.hv-arrow-success { fill: var(--success-fg); }
+.hv-arrow-muted { fill: var(--text-muted); }
+
+.hv-toggle { position: absolute; right: var(--gutter); bottom: var(--space-2); min-height: 2rem; padding: 0.2rem 0.75rem; border-color: var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--text-muted); font-size: var(--text-sm); }
+
+@keyframes hv-spin { to { transform: rotate(360deg); } }
+@keyframes hv-flow { to { stroke-dashoffset: -28; } }
+@keyframes hv-scan { to { transform: translateY(54px); } }
+@keyframes hv-pulse { 50% { opacity: 0.35; } }
+@keyframes hv-seg { 50% { opacity: 0.95; } }
+
+.hv[data-paused='true'] * { animation-play-state: paused; }
+.hv-static *, .hv-static *::before { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .hv * { animation: none !important; }
+}

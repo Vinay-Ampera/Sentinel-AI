@@ -1,0 +1,3 @@
+/* ProjectFindingsPage.jsx styles. */
+.findings-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.findings-filters .field { min-width: 12rem; margin-bottom: var(--space-3); }

@@ -1,0 +1,6 @@
+/* DataTable.jsx styles. Tokens only; see styles/tokens.css. */
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.data-table th, .data-table td { white-space: nowrap; }
+.data-table td { white-space: normal; min-width: 6rem; }
+.data-table tbody tr:last-child td { border-bottom: 0; }
+.data-table .align-end { text-align: right; }

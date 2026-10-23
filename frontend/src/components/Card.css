@@ -1,0 +1,14 @@
+/* Card.jsx styles. Tokens only; see styles/tokens.css. */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-5); margin-bottom: var(--space-5); }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.card-title { margin: 0; font-size: var(--text-lg); }
+.card-actions { display: flex; gap: var(--space-2); }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--space-3); margin: 0 0 var(--space-4); }
+.metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3) var(--space-4); }
+.metric-label { font-size: var(--text-sm); color: var(--text-muted); }
+.metric-value { margin: 0; font-size: var(--text-xl); font-weight: 600; line-height: 1.2; }
+.metric-hint { margin: 0; font-size: var(--text-sm); color: var(--text-muted); }
+.progress-bar { height: 0.5rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: var(--radius-pill); overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); }
+.progress-indeterminate { width: 35%; animation: progress-slide 1.4s ease-in-out infinite; }
+@keyframes progress-slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }

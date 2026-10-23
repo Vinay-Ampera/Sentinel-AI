@@ -1,0 +1,8 @@
+/* Toast.jsx styles. Tokens only; see styles/tokens.css. */
+.toast-region { position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 60; display: grid; gap: var(--space-2); width: min(24rem, calc(100vw - 2rem)); }
+.toast { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow); }
+.toast-success { border-color: var(--success-border); }
+.toast-danger { border-color: var(--danger-border); background: var(--danger-bg); }
+.toast-warning { border-color: var(--warning-border); }
+.toast-text { display: grid; flex: 1; min-width: 0; }
+.toast-close { min-height: 1.75rem; min-width: 1.75rem; padding: 0.15rem; border-color: transparent; background: transparent; }

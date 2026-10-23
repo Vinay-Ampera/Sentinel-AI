@@ -1,0 +1,6 @@
+/* EvidenceViewer.jsx styles. Tokens only; see styles/tokens.css. */
+.evidence { margin: 0 0 var(--space-4); }
+.evidence-caption { display: flex; gap: var(--space-3); align-items: baseline; font-weight: 600; margin-bottom: var(--space-1); }
+.evidence-caption .muted { font-weight: 400; }
+.evidence-note { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-muted); }
+.evidence .evidence-view { max-height: 24rem; background: var(--surface-muted); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }

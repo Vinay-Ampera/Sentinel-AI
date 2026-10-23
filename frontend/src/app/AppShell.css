@@ -1,0 +1,15 @@
+/* AppShell.jsx styles: page frame (skip link, main column, footer). */
+.shell-main { flex: 1; padding-block: var(--space-6); }
+.shell-main-full { padding-block: 0; }
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -4rem;
+  z-index: 100;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius);
+}
+.skip-link:focus { top: var(--space-3); }

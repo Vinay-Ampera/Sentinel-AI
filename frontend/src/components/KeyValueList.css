@@ -1,0 +1,6 @@
+/* KeyValueList.jsx styles. */
+.kv-list { display: grid; gap: var(--space-2); margin: 0 0 var(--space-3); }
+.kv-row { display: grid; grid-template-columns: minmax(8rem, 12rem) 1fr; gap: var(--space-3); }
+.kv-row dt { color: var(--text-muted); font-size: var(--text-sm); }
+.kv-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 36rem) { .kv-row { grid-template-columns: 1fr; gap: 0; } }

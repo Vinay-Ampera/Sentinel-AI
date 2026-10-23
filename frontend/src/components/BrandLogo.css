@@ -1,0 +1,6 @@
+/* BrandLogo.jsx styles. */
+.brand-logo { display: inline-flex; flex: none; }
+.brand-logo img { display: block; height: auto; }
+.brand-logo-dark { display: none !important; }
+:root[data-theme='dark'] .brand-logo-light { display: none !important; }
+:root[data-theme='dark'] .brand-logo-dark { display: block !important; }

@@ -1,0 +1,3 @@
+/* StartRunCard.jsx styles. */
+.start-run { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.start-run .field { margin-bottom: 0; min-width: 18rem; }

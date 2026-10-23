@@ -1,0 +1,10 @@
+/* Alert.jsx styles. Tokens only; see styles/tokens.css. */
+.alert { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); margin-bottom: var(--space-4); }
+.alert .icon { margin-top: 0.2rem; }
+.alert-body { min-width: 0; }
+.alert-title { display: block; }
+.alert-danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger-fg); }
+.alert-warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-fg); }
+.alert-success { background: var(--success-bg); border-color: var(--success-border); color: var(--success-fg); }
+.alert-info { background: var(--info-bg); border-color: var(--info-border); color: var(--info-fg); }
+.alert-neutral { background: var(--surface-muted); border-color: var(--border); }

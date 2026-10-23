@@ -1,0 +1,3 @@
+/* SectionHeader.jsx styles. */
+.section-header { margin-bottom: var(--space-4); }
+.section-header h2 { overflow-wrap: anywhere; }

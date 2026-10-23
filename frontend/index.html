@@ -2,9 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>fe</title>
+    <title>Sentinel AI</title>
+    <meta name="description" content="Evidence-driven application quality: plan, run and review checks with the evidence behind every result." />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Apply the saved (or system) theme before first paint so there is no flash. Keep the rules
+         in step with src/theme/theme.js. -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem('sentinel-theme');
+          if (p !== 'light' && p !== 'dark') p = 'system';
+          var dark = p === 'dark' || (p === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var r = document.documentElement;
+          r.dataset.theme = dark ? 'dark' : 'light';
+          r.dataset.themePref = p;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

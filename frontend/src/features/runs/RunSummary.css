@@ -1,0 +1,3 @@
+/* RunSummary.jsx styles. */
+.run-outcomes { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: var(--space-5); margin-top: var(--space-4); }
+.run-outcomes h3 { font-size: var(--text-base); }

@@ -1,0 +1,5 @@
+/* ThemeToggle.jsx styles. Tokens only; see styles/tokens.css. */
+.theme-toggle { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); }
+.theme-option { display: inline-grid; place-items: center; width: 2rem; height: 2rem; min-height: 0; padding: 0; border: 1.5px solid transparent; border-radius: 50%; background: transparent; color: var(--text-muted); }
+.theme-option:hover:not(:disabled) { background: var(--surface-muted); color: var(--text); }
+.theme-option[aria-pressed='true'] { border-color: var(--text); color: var(--text); background: var(--bg); }

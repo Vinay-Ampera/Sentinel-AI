@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api } from '../src/services/api.js'
+import { ApiError, api, setUnauthorizedHandler } from '../src/services/api.js'
 
 const json = (status, body) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 
@@ -99,3 +99,46 @@ describe('findings client', () => {
     await expect(api.getFinding('f')).rejects.toMatchObject({ code: 'bad_response' })
   })
 })
+
+describe('api client: projects, uploads and session expiry', () => {
+  it('uploads a ZIP as the raw body with its content type and the CSRF token', async () => {
+    fetch.mockImplementation(() => json(200, { user: { id: 'u', role: 'developer' }, csrf_token: 'tok' }))
+    await api.login('a@example.com', 'pw')
+    fetch.mockImplementation(() => json(201, { id: 's1' }))
+    const file = new Blob(['PK'], { type: 'application/zip' })
+    await api.uploadZipSource('proj', 'my code', file)
+    const [url, init] = fetch.mock.calls[1]
+    expect(url).toBe('/api/v1/projects/proj/sources/zip?name=my%20code')
+    expect(init.body).toBe(file)
+    expect(init.headers['Content-Type']).toBe('application/zip')
+    expect(init.headers['X-CSRF-Token']).toBe('tok')
+  })
+
+  it('validates project shapes at the boundary', async () => {
+    fetch.mockImplementation(() => json(200, { items: [{ id: 'p' }] }))
+    await expect(api.listProjects()).rejects.toMatchObject({ code: 'bad_response' })
+    fetch.mockImplementation(() => json(200, { items: [{ id: 'p', name: 'n', status: 'active', application_type: 'web_app' }] }))
+    expect(await api.listProjects(true)).toHaveLength(1)
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/v1/projects?include_archived=true')
+  })
+
+  it('reports a 401 on a protected call as a session expiry, but not on sign-in or the session probe', async () => {
+    const expired = vi.fn()
+    setUnauthorizedHandler(expired)
+    fetch.mockImplementation(() => json(401, { error: { code: 'unauthenticated', message: 'no' } }))
+    await expect(api.login('a@example.com', 'bad')).rejects.toMatchObject({ status: 401 })
+    await expect(api.me()).rejects.toMatchObject({ status: 401 })
+    expect(expired).not.toHaveBeenCalled()
+    await expect(api.listProjects()).rejects.toMatchObject({ status: 401 })
+    expect(expired).toHaveBeenCalledTimes(1)
+    setUnauthorizedHandler(null)
+  })
+
+  it('changes the password with the field names the server expects', async () => {
+    fetch.mockImplementation(() => json(200, { other_sessions_revoked: 2 }))
+    const result = await api.changePassword('old', 'new')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ current: 'old', new: 'new' })
+    expect(result.other_sessions_revoked).toBe(2)
+  })
+})
+

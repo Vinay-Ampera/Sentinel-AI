@@ -1,0 +1,5 @@
+/* ProjectGovernancePage.jsx styles. */
+.break-glass-form { max-width: 30rem; margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.policy-definitions { margin-bottom: var(--space-4); }
+.policy-definitions dt { font-weight: 600; text-transform: capitalize; }
+.policy-definitions dd { margin: 0 0 var(--space-2); color: var(--text-muted); }
