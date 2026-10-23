@@ -655,8 +655,8 @@ This section lists only each stage's status, next action, requirements and accep
 - The plan snapshot is linked to the resulting run.
 
 ### Stage 7 — Job queue, batches, cancellation, and recovery
-**Status:** Pending  
-**Next action:** Starts after Stage 6; start Redis first (Q32).
+**Status:** Completed  
+**Next action:** Owner review and commit; apply migrations 0003, 0004 and 0005 to the real database (`alembic upgrade head`, review the SQL first); start Redis (`docker compose up -d redis`) and run `make worker` / `make beat`. Stage 8 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-23, Stage 7).
 
 **Work**
 - Add Celery + Redis and separate worker process.

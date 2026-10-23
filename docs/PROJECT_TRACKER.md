@@ -15,7 +15,7 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 4 | Authentication and RBAC (identity, roles, audit) | Completed | Authentication + RBAC done; project/membership routes delivered in Stage 5; approval-decision audit in Stage 6 |
 | 5 | Project intake and deterministic analysis | Completed | ZIP upload + static analysis done; Git/localhost/remote registered, not analysed (Q36) |
 | 6 | Test plans and approval policies | Completed | Section 7 (2026-10-22 Stage 6 entry); migration 0003 not yet applied to the real DB |
-| 7 | Job queue, batches, cancellation, recovery | Pending | Not started |
+| 7 | Job queue, batches, cancellation, recovery | Completed | Section 7 (2026-10-23 Stage 7 entry); migrations 0003-0005 not yet applied to the real DB; uncommitted |
 | 8 | Sandboxed execution foundation | Pending | Not started |
 | 9 | First QA execution path | Pending | Not started |
 | 10 | Security integrations and finding verification | Pending | Not started |
@@ -28,19 +28,21 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 
 Owner review/commit state: Stages 0-5 are committed and pushed (owner report, 2026-10-22). Stage 6 is implemented but **uncommitted**.
 
-## 2. Latest verified results (Stage 6 completion, 2026-10-22)
+## 2. Latest verified results (Stage 7 completion, 2026-10-23)
 
-Disposable PostgreSQL 17 database only; nothing was run against the live `sentinel-ai` database, a live server, or a browser.
+Disposable PostgreSQL 17 (private cluster, port 55432) and a throw-away `redis:7-alpine` container (127.0.0.1:56379, no persistence) only; nothing was run against the live `sentinel-ai` database, your dev Redis, a live API server or a browser. `backend/.env` was not read.
 
 | Check | Result |
 |---|---|
-| pytest with disposable DB | 246 passed (1 upstream httpx/starlette warning) |
-| pytest without DB | 144 passed, 102 skipped (DB tests skip by design) |
-| `ruff check` | clean |
-| `ruff format --check` | clean (75 files) |
-| `mypy` | clean (50 source files) |
-| Frontend `npm run lint` / `npm test` / `npm run build` | oxlint clean; vitest 11 passed (3 files); build succeeded |
-| Database changes in Stage 6 | two additive migrations, `0003_plan_integrity` and `0004_break_glass` (applied to the disposable DB only; **neither applied to the real DB**) |
+| pytest with disposable DB + Redis | 288 passed (1 upstream httpx/starlette warning) |
+| pytest with DB, without Redis | 286 passed, 2 skipped (the real-broker tests skip by design) |
+| pytest without DB or Redis | 154 passed, 134 skipped |
+| `ruff check` / `ruff format --check` | clean (95 files) |
+| `mypy` | clean (65 source files) |
+| Real broker | `test_celery_broker.py`: a batch published through Redis was consumed by a real Celery worker; a live worker process was SIGKILLed mid-batch and the batch was recovered and finished by a second worker |
+| Worker/beat entry points | `celery -A sentinel_ai.jobs.worker worker` started as its own process (3 tasks registered, startup reconcile ran); `beat` sent reconcile/dispatch on schedule |
+| Database changes in Stage 7 | one additive migration, `0005_job_queue` (up/down round trip tested on the disposable DB; **not applied to the real DB**, nor are 0003/0004) |
+| Frontend | no frontend change; checks not re-run |
 
 ## 3. Decisions and scope (pointers and summaries)
 
@@ -59,11 +61,12 @@ Disposable PostgreSQL 17 database only; nothing was run against the live `sentin
 
 ## 4. Remaining work and known issues
 
-- Stage 7 not started; no work begins without owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`; the worker must re-run the target gate (Stage 7).
-- Owner actions for Stage 6: review and commit; apply migrations 0003 and 0004 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0004_break_glass --sql` (awaiting your approval; not done). No new environment variables were added, so `.env`/`.env.example` need no change.
+- Stage 7 is implemented and **uncommitted**; Stage 8 (sandbox) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
+- Owner actions for Stages 6-7: review and commit; apply migrations 0003, 0004 and 0005 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0005_job_queue --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
+- Execution is still a stub: runs record every test as `skipped` ("Not executed ... Stage 8"). No target code runs until Stage 8. No new environment variables were added, so `.env`/`.env.example` need no change.
 - Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
-- Asynchronous analysis (Q37, Stage 7); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
-- Redis not started locally (Q32, deferred to Stage 7); readiness does not require Redis (Q31).
+- Asynchronous analysis stays synchronous (Q37 deferred again, Q52); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
+- Redis: Compose config verified and a Redis container was exercised in tests (Q32); your dev Redis was not touched. Readiness still does not require Redis (Q31).
 - Frontend: no authentication or intake screens yet.
 - Owner actions: commit Stages 4-5; add `SESSION_TOKEN_PEPPER` and the optional artifact/ZIP/login variables to `backend/.env` and `backend/.env.example` (the latter is outside Claude's permitted paths).
 - Full list of open questions: `OPEN_QUESTIONS.md`.
@@ -348,3 +351,19 @@ Observation: one full-suite run on the freshly created disposable cluster, befor
 NOT run: real database, live server/browser. Stage 7 not started.
 ```
 
+```text
+Date: 2026-10-23
+Stage: 7 (job queue, batches, cancellation, recovery)
+Status: DONE pending owner review (all acceptance criteria met with recorded evidence; execution is a stub until Stage 8).
+Design: approved by the owner before coding (batch size 10, 2 batches/run, 4 global, lease 60 s, cancel grace 30 s, max attempts 1; migration 0005 approved; Q37 deferred). ADR-0004.
+Implemented: migration 0005_job_queue (test_batches.heartbeat_at/lease_expires_at/not_before; test_batch_items); core/config.py JobSettings; execution/{interface,stub}.py (stub records every test as skipped, never passed/failed); repositories/runs.py; services/{job_state,runs,dispatcher,worker_runtime,reconciler}.py; schemas/runs.py; api/runs.py (create/list/get/cancel/batches/batch/results/events); jobs/{celery_app,tasks,worker}.py; Makefile worker/beat; celery[redis] dependency (kombu pinned <5.7 because 5.7.0rc1 was the only release allowing redis 8; redis is now 6.4.0).
+Behavior: run created only from an approved plan whose content hash still matches, with the target gate re-run, per-project serialization and Idempotency-Key; batches claimed in PostgreSQL by the latest dispatch only (queue_task_id), so duplicate/stale/concurrent deliveries are no-ops; the worker re-checks the starter's access, plan approval and hash, project state and the target gate; cancel is DB-first (queued -> cancelled at once, claimed -> cancel_requested -> executor.terminate -> cancelled, or failed/cancel_unconfirmed); bounded retries only for failed_to_start/worker lost/internal error with exponential backoff and jitter; timeouts at worker and reconciler; reconciler (beat + on worker start, advisory-locked, idempotent) releases unclaimed dispatches, recovers expired leases, times out overruns/runs/queue waits, settles unconfirmed cancels, finalizes runs.
+Tests added: tests/unit/test_job_settings.py (10); tests/integration/test_runs_jobs.py (30: batching, concurrency, idempotency, approval/hash/gate/policy refusals, duplicate and racing delivery, broker outage, queued and running cancel, batch isolation, unconfirmed cancel, retry bounds, timeouts, revalidation (user, access, project, authorization, policy), kill/lease recovery, late-worker takeover, scoping, break-glass read-only, no secrets in events); tests/integration/test_celery_broker.py (2, real broker); test_migrations.py updated for test_batch_items.
+Commands actually run: private PostgreSQL 17 cluster and a throw-away Redis container for tests only; pytest (three configurations above, repeated); ruff check; ruff format; mypy; alembic heads; celery worker and beat smoke runs with SENTINEL_ENV_FILE=/dev/null; poetry add celery[redis] and kombu pin.
+Results: see section 2.
+Observation: one full-suite run reported 1 failure in tests/integration/test_projects_api.py::test_analysis_result_separates_facts_inferences_and_gaps_and_is_persisted (it passes alone and in 6 later runs; same intermittent pattern noted in the 2026-10-23 Stage 6 entry). Not caused by or related to Stage 7 code; not root-caused (Q57).
+NOT run: real database, your dev Redis, a live API server, browser, frontend checks (no frontend change), load/soak tests, any sandboxed execution (Stage 8). Hard-kill recovery was tested against a real Celery process, but not with a long-running real sandbox.
+Acceptance criteria: queued jobs cancellable (tested); running jobs request termination through the executor interface and report the outcome (tested with the stub/Probe executors; a real sandbox arrives in Stage 8); completed batches survive later cancellation (tested); duplicate delivery does not duplicate work (tested, incl. concurrent threads); stuck jobs reconciled and visible via job_events (tested); worker restart behavior tested (simulated kill + real SIGKILL) and documented (JOB_AND_SANDBOX_DESIGN, ADR-0004).
+Known issues: Q52-Q57 in OPEN_QUESTIONS.md.
+Next action: owner review and commit; apply migrations 0003-0005 to the real database; Stage 8 on approval.
+```

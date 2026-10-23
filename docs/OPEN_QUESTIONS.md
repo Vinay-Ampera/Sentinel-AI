@@ -14,7 +14,7 @@ Updated 2026-10-22 (Stage 2). Resolve via ADR or tracker update.
 | Q5 | Authentication/session mechanism and permission matrix | No | **Implemented in Stage 4 on the owner's instruction to follow the documented design (ADR-0002 Accepted).** Original note: ADR-0002 (Argon2id + server-side sessions + CSRF; no SSO) and the matrix in SECURITY_AND_SAFETY. Confirm or amend before Stage 4 |
 | Q6 | Sandbox isolation level (Docker vs rootless/gVisor/Kata/VM) | No (Stage 8) | Threat-model first |
 | Q7 | ~~First-release scope~~ **Resolved 2026-10-22** (see Stage 0 decisions below). Residual: repository providers beyond generic Git; localhost-URL access from a sandbox | No | Stage 2 design |
-| Q8 | Celery+Redis cancel/retry/restart/duplicate behavior | No (Stage 7) | Proof of concept |
+| Q8 | ~~Celery+Redis cancel/retry/restart/duplicate behavior~~ **Resolved 2026-10-23 (Stage 7):** validated against a real Celery worker and Redis (publish/consume, SIGKILL recovery) plus DB-level tests for duplicate delivery, cancel, retry and timeouts; see ADR-0004 | No | Closed |
 | Q9 | Migration tool, lint/type/test tools, pinned Python/Node versions (local: Python 3.12.3, Node 24.21.0; suggested: ruff, mypy, Alembic, Vitest) | **Yes** | Confirm before init |
 | Q10 | Gemini model/budgets, artifact store, production topology, secrets management | No | Defer |
 | Q11 | "Ponytail" tool is unidentified | No | Not recommended until clarified |
@@ -65,7 +65,7 @@ Q15–Q24 remain open; Stage 2 partially addressed: Q16 (tracker restructure not
 | # | Question | Blocks | Handling |
 |---|---|---|---|
 | Q31 | ~~Redis required for readiness?~~ **Resolved 2026-10-22:** Redis stays reported but not required for readiness until Stage 7 (owner reports it is currently unavailable locally; the API is otherwise healthy). Revisit with the Celery proof of concept (Q8) | Closed | — |
-| Q32 | Compose Redis/dev-PostgreSQL services are config-validated but not started; Redis unavailable locally | Stage 7 | **Deferred to Stage 7 by owner decision**; start with `docker compose up -d redis` then and record the result |
+| Q32 | **Resolved 2026-10-23:** Compose Redis config reviewed (password required, 127.0.0.1 only, no persistence); tests used a separate throw-away Redis container, not your dev instance. Compose/dev-PostgreSQL services are config-validated; Redis unavailable locally | Stage 7 | **Deferred to Stage 7 by owner decision**; start with `docker compose up -d redis` then and record the result |
 Resolved in Stage 3: Q9-era toolchain gap "baseline lint/format/type/test commands" (Makefile + README); Q24 unchanged. Q28: owner reports live migrations and health endpoints work against sentinel-ai (2026-10-22); recorded as owner-reported, not Claude-verified.
 
 ## Stage 4 additions (2026-10-22)
@@ -107,3 +107,14 @@ Resolved in Stage 3: Q9-era toolchain gap "baseline lint/format/type/test comman
 | Q51 | **Resolved:** project managers manage project risk policy within organization limits. | `PUT /projects/{id}/policies/{key}` needs `manage`; allowed levels intersect with the organization's, approval levels only add, production can never be enabled by a project. Unused role permissions `approval.low_medium` and `policy.project_scope` removed. |
 
 Residual notes: break-glass has no organization kill switch yet and no notification to project managers beyond the audit log and the grant list (candidate for Stage 12 alerts).
+
+## Stage 7 additions (2026-10-23)
+| # | Question | Blocks | Handling |
+|---|---|---|---|
+| Q52 | Q37 **deferred again**: project analysis stays synchronous (201). Moving it to a job changes the Stage 5 contract and needs worker-side source handling that overlaps the Stage 8 sandbox boundary | Stage 8+ | Revisit with Git/remote analysis |
+| Q53 | `POST /test-runs/{id}/rerun` (API_DESIGN) not built: Stage 7 scope was create/status/cancel/progress. A rerun today is a new `POST /projects/{id}/test-runs` of the same approved plan (allowed once the previous run is terminal). `parent_run_id`/destructive re-approval semantics are open | Stage 9/15 | Owner to confirm |
+| Q54 | Any project member with `run` access can cancel any run of the project (not only the starter). The worker's revalidation uses the **starter's** current access, so removing the starter stops their queued runs | No | Owner to confirm |
+| Q55 | Termination of a sandbox whose worker was lost cannot be confirmed by the reconciler; the batch is recorded as `cancelled` with `worker_lost_during_cancel` / `termination_confirmed: false`. Stage 8 must add sandbox cleanup by label | Stage 8 | Implement with the executor |
+| Q56 | Defaults chosen with the owner (batch 10, 2 per run, 4 global, lease 60 s, grace 30 s, 1 attempt, timeouts 1800/3600/3600 s) are environment-tunable `JOB_*` settings, not per-project policy. `.env.example` was not updated (outside permitted paths) | No | Owner adds the variables if wanted |
+| Q57 | One intermittent failure of `test_analysis_result_separates_facts_inferences_and_gaps_and_is_persisted` appeared in a full run (also seen once in Stage 6); it passes alone and in repeated runs. It reads `analyses` `items[0]`, which is probably an ordering tie. Not Stage 7 code; not investigated | No | Look at analysis list ordering |
+Also: `celery[redis]` pulled `kombu 5.7.0rc1` (needed redis 8); pinned `kombu >=5.6,<5.7`, which lowered `redis` to 6.4.0. Revisit when kombu 5.7 is stable.

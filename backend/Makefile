@@ -1,5 +1,5 @@
 # Baseline quality commands (run from backend/). `make check` = lint + format check + types + tests.
-.PHONY: install lint format format-check typecheck test check migrate migrate-sql current
+.PHONY: install lint format format-check typecheck test check migrate migrate-sql current worker beat
 
 install:
 	poetry install
@@ -20,3 +20,8 @@ migrate-sql:
 	poetry run alembic upgrade head --sql
 migrate:
 	poetry run alembic upgrade head
+# Job queue (Stage 7): separate processes from the API. Need DATABASE_URL and REDIS_URL (env or backend/.env).
+worker:
+	poetry run celery -A sentinel_ai.jobs.worker worker -Q $${JOB_QUEUE_NAME:-sentinel-jobs} --concurrency 2 -l INFO
+beat:
+	poetry run celery -A sentinel_ai.jobs.worker beat -l INFO

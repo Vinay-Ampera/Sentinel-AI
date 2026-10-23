@@ -34,3 +34,9 @@ Code lives in `src/sentinel_ai/`: `api/` (routes, thin) → `services/` (applica
 - Remote targets pass `authorizations.gate_reason` at plan time, at submit, and again in the worker before running (Stage 7). Production stays blocked unless the global policy and a Super Admin four-eyes authorization allow it.
 - Routes addressed by plan/approval id (no `project_id` in the path) must authorize through `project_access.authorize_project` from the row's own project.
 
+## Jobs and recovery rules (Stage 7)
+- Runs come only from `services/runs.create_run` (approved plan, matching `content_sha256`, target gate, idempotency). A queue message carries only a batch id; never put commands, secrets or user input in a task. PostgreSQL decides every status: change run/batch status only through `repositories.runs.transition_*` (conditional on the expected status) via `services/job_state`, which also writes `job_events`.
+- A worker may act only after `claim_batch` succeeds for its own message id, and must re-run `worker_runtime.revalidate` (starter access, plan hash, project state, target gate) before executing. Results are inserted idempotently; a worker that lost its lease stops writing.
+- Executors implement `execution.interface.Executor`, poll `should_stop`, and never report a result they did not produce (the stub reports `skipped`). Cancellation never relies on Redis revocation.
+- Retries are bounded and only for infrastructure failures; never auto-retry a test that already produced a result.
+

@@ -101,7 +101,7 @@ All errors:
 | `POST /projects/{id}/test-runs` `{plan_id, timeout_seconds?}` + `Idempotency-Key` → `202` | Start a run of an **approved** plan; rejects with `approval_required`/`policy_blocked` (e.g., production, unauthorized target) | run |
 | `GET /projects/{id}/test-runs`, `GET /test-runs/{id}` | List/status (progress, counts, timestamps, error) | read |
 | `POST /test-runs/{id}/cancel` → `202` | Request cancellation (idempotent) | run |
-| `POST /test-runs/{id}/rerun` → `202` | New run with `parent_run_id`; destructive tests re-require approval | run |
+| `POST /test-runs/{id}/rerun` → `202` | **Not implemented in Stage 7 (Q53)**: new run with `parent_run_id`; destructive tests re-require approval | run |
 | `GET /test-runs/{id}/batches`, `GET /test-batches/{id}` | Batch status/attempts | read |
 | `GET /test-runs/{id}/results` `?status=` | Per-test results | read |
 | `GET /test-runs/{id}/events` `?after=` | `job_events` timeline (polling) | read |

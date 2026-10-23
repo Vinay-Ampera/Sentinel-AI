@@ -33,7 +33,7 @@ Names, defaults, and placeholders are in `.env.example`; real values go only in 
 
 ## Health endpoints
 - `GET /api/v1/health` and `/health/live`: liveness only (`{"status":"ok"}`).
-- `GET /api/v1/health/ready`: `200`/`503` with `{"status": "ready|not_ready", "checks": {"database": ok|unavailable, "migrations": ok|pending|unknown, "redis": ok|unavailable}}`. Ready = database reachable **and** at the newest Alembic revision. Redis is reported but does not fail readiness until the job queue is used (Stage 7). Only status words are returned; no URLs, hosts, credentials, or exception text.
+- `GET /api/v1/health/ready`: `200`/`503` with `{"status": "ready|not_ready", "checks": {"database": ok|unavailable, "migrations": ok|pending|unknown, "redis": ok|unavailable}}`. Ready = database reachable **and** at the newest Alembic revision. Redis is reported but does not fail readiness (Q31). Only status words are returned; no URLs, hosts, credentials, or exception text.
 
 ## Local services (Docker Compose, repo root)
 `docker-compose.yml` provides Redis and, optionally, a **separate** throw-away PostgreSQL (profile `local-db`, port 5433, own volume). Your existing local `sentinel-ai` database is not managed by Compose.
@@ -44,6 +44,16 @@ docker compose --profile local-db up -d       # + dev PostgreSQL on 127.0.0.1:54
 docker compose ps && docker compose down      # status / stop (data volume kept)
 ```
 Compose refuses to start without `REDIS_PASSWORD`; there are no default passwords. Set `REDIS_URL=redis://:PASSWORD@localhost:6379/0` in `backend/.env`.
+
+## Job queue (Stage 7)
+Celery + Redis deliver batches to a **separate worker process**; PostgreSQL is the source of truth for every status, and Redis is only the broker. Execution is a stub until Stage 8: runs record each test as `skipped` ("Not executed"), so no target code runs.
+```bash
+docker compose up -d redis      # needs REDIS_PASSWORD (root .env); set REDIS_URL in backend/.env
+make worker                     # poetry run celery -A sentinel_ai.jobs.worker worker -Q sentinel-jobs --concurrency 2
+make beat                       # periodic reconcile + dispatch (run exactly one beat)
+```
+Run the API as usual. Optional tuning (defaults in parentheses): `JOB_QUEUE_NAME` (sentinel-jobs), `JOB_BATCH_SIZE` (10), `JOB_MAX_CONCURRENT_BATCHES_PER_RUN` (2), `JOB_MAX_CONCURRENT_BATCHES` (4), `JOB_LEASE_SECONDS` (60), `JOB_CANCEL_GRACE_SECONDS` (30), `JOB_MAX_ATTEMPTS` (1, max 3), `JOB_RETRY_BACKOFF_SECONDS` (5), `JOB_BATCH_TIMEOUT_SECONDS` (1800), `JOB_RUN_TIMEOUT_SECONDS` (3600), `JOB_QUEUE_WAIT_SECONDS` (3600), `JOB_RECONCILE_INTERVAL_SECONDS` (30). If the broker is down, `POST /projects/{id}/test-runs` still returns `202` and the batch is dispatched later by beat. After a worker crash, wait for the lease to expire (default 60 s) and the reconciler re-queues or fails the batch visibly (`GET /test-runs/{id}/events`). Design: `docs/architecture/JOB_AND_SANDBOX_DESIGN.md`.
+Broker tests: set `TEST_DATABASE_URL` (a `*_test` database) and `TEST_REDIS_URL` (a disposable Redis) to run `tests/integration/test_celery_broker.py`; otherwise they skip.
 
 ## Quality commands
 `make check` (from `backend/`) runs `ruff check`, `ruff format --check`, `mypy`, and `pytest`; individual targets: `lint`, `format`, `format-check`, `typecheck`, `test`, `current`, `migrate-sql`, `migrate`.

@@ -99,6 +99,21 @@ class Settings(DatabaseSettings):
     zip_max_uncompressed_mb: int = 500
     zip_max_files: int = 20000
 
+    # --- Job queue (Stage 7). Redis (REDIS_URL) is the broker only; PostgreSQL is truth. ---
+    job_queue_name: str = "sentinel-jobs"
+    job_executor: Literal["stub"] = "stub"  # the sandbox executor arrives in Stage 8
+    job_batch_size: int = 10
+    job_max_concurrent_batches_per_run: int = 2
+    job_max_concurrent_batches: int = 4
+    job_lease_seconds: int = 60
+    job_cancel_grace_seconds: int = 30
+    job_max_attempts: int = 1
+    job_retry_backoff_seconds: float = 5.0
+    job_batch_timeout_seconds: int = 1800
+    job_run_timeout_seconds: int = 3600
+    job_queue_wait_seconds: int = 3600
+    job_reconcile_interval_seconds: int = 30
+
     # --- LLM (consumed from Stage 11) ---
     gemini_api_key: SecretStr | None = None
     gemini_model: str | None = None
@@ -130,6 +145,17 @@ class Settings(DatabaseSettings):
         "upload_max_mb",
         "zip_max_uncompressed_mb",
         "zip_max_files",
+        "job_batch_size",
+        "job_max_concurrent_batches_per_run",
+        "job_max_concurrent_batches",
+        "job_lease_seconds",
+        "job_cancel_grace_seconds",
+        "job_max_attempts",
+        "job_retry_backoff_seconds",
+        "job_batch_timeout_seconds",
+        "job_run_timeout_seconds",
+        "job_queue_wait_seconds",
+        "job_reconcile_interval_seconds",
         "llm_max_tokens_per_run",
         "llm_max_cost_usd_per_run",
         "llm_max_cost_usd_per_day",
@@ -139,6 +165,16 @@ class Settings(DatabaseSettings):
         if value <= 0:
             raise ValueError("must be > 0")
         return value
+
+    @model_validator(mode="after")
+    def _job_limits(self) -> "Settings":
+        if self.job_max_attempts > 3:
+            raise ValueError("JOB_MAX_ATTEMPTS must be <= 3")
+        if self.job_batch_timeout_seconds > 86400 or self.job_run_timeout_seconds > 86400:
+            raise ValueError("job timeouts must be <= 86400 seconds")
+        if self.job_max_concurrent_batches_per_run > self.job_max_concurrent_batches:
+            raise ValueError("per-run batch concurrency cannot exceed the global limit")
+        return self
 
     @model_validator(mode="after")
     def _production_requirements(self) -> "Settings":

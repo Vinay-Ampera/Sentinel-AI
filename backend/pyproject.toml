@@ -16,6 +16,8 @@ psycopg = {version = ">=3.2", extras = ["binary"]}
 pydantic-settings = ">=2.7"
 redis = ">=5"
 argon2-cffi = "^25.1.0"
+celery = {version = ">=5.4", extras = ["redis"]}
+kombu = ">=5.6,<5.7"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8"
@@ -39,6 +41,12 @@ strict = true
 mypy_path = "src"
 packages = ["sentinel_ai"]
 
+[[tool.mypy.overrides]]
+# Celery ships no type information.
+module = ["celery", "celery.*", "kombu", "kombu.*"]
+ignore_missing_imports = true
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "tests"]
@@ -53,6 +61,11 @@ pythonpath = ["src", "tests"]
 "src/sentinel_ai/services/authorizations.py" = ["E501"]
 "src/sentinel_ai/services/plans.py" = ["E501"]
 "src/sentinel_ai/services/approvals.py" = ["E501"]
+"src/sentinel_ai/services/runs.py" = ["E501"]
+"src/sentinel_ai/services/job_state.py" = ["E501"]
+"src/sentinel_ai/services/worker_runtime.py" = ["E501"]
+"src/sentinel_ai/services/reconciler.py" = ["E501"]
+"src/sentinel_ai/repositories/runs.py" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency declarations in signatures are idiomatic, not mutable defaults.

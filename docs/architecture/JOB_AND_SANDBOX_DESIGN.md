@@ -58,5 +58,18 @@ Separate container per batch; non-root; drop all capabilities; seccomp/AppArmor 
 ## Caveat
 Docker is not a complete boundary against hostile code. Evaluate rootless Docker, gVisor, Kata, or disposable VMs (Q6) via a threat model before enabling untrusted execution. Until then execution stays disabled.
 
-## Remaining TODO (Stage 7/8)
-Queue topology and task names, executor interface, artifact flow detail, threat model, residual risks.
+## Queue topology and protocol (implemented in Stage 7; ADR-0004)
+- **Processes:** API (FastAPI), worker (`celery -A sentinel_ai.jobs.worker worker`), beat (`... beat`). `make worker` / `make beat` from `backend/`. Redis is only the broker (queue `sentinel-jobs`, JSON, no result backend, `acks_late`, `reject_on_worker_lost`, prefetch 1). Messages carry a batch id only.
+- **Tasks:** `sentinel_ai.run_batch(batch_id)`, `sentinel_ai.dispatch_pending`, `sentinel_ai.reconcile` (beat every `JOB_RECONCILE_INTERVAL_SECONDS`, and once when a worker starts).
+- **Run creation:** approved plan, unchanged `content_sha256`, target gate re-run, one active run per plan, `Idempotency-Key` returns the original run. The run, its batches (`JOB_BATCH_SIZE` tests each, in plan order) and `test_batch_items` are committed **before** anything is published.
+- **Dispatch:** under an advisory lock, queued batches get a fresh `queue_task_id` (and an enqueue deadline of 5 leases) within the per-run (2) and global (4) limits, oldest run first; then the message is published with that id. A publish failure releases the id immediately; the reconciler releases an id that never produced a claim. Nothing is lost if Redis is down.
+- **Claim:** `UPDATE ... WHERE status='queued' AND queue_task_id=:this_message_id AND not_before<=now()`. Only the latest dispatch can claim; duplicate, redelivered or stale messages claim nothing and exit (`noop`).
+- **Worker:** claim -> revalidate (starter active and still allowed to run, project active, plan approved with the same hash, target gate per test) -> `running` -> per test: renew lease, check cancel/timeout in PostgreSQL, call `Executor.execute(request, should_stop)`, store an idempotent result (`UNIQUE(batch, test, attempt)`) -> settle batch -> derive run status -> dispatch the next batch. Revalidation failure fails the batch (`revalidation_failed`, results `blocked`); a policy-blocked test gets a `blocked` result; all blocked = `blocked_by_policy`.
+- **Executor contract:** the stub records every test as `skipped` ("Not executed ... Stage 8"); it never reports pass/fail. A real executor must poll `should_stop` at least every lease/3 (this renews the lease and signals cancel/timeout/takeover) and implement `terminate`.
+- **Leases:** `heartbeat_at`/`lease_expires_at` (60 s) are renewed on every poll. An expired lease means a lost worker. A worker whose batch was taken over stops writing (`lost`).
+- **Reconciler:** advisory-locked and idempotent. Expired lease -> `worker_lost` event, then bounded re-queue (`attempt+1`, backoff with jitter) or `failed`/`worker_lost`; lost while `cancel_requested` -> `cancelled` with `termination_confirmed: false`; running past timeout + grace -> `timed_out`; `cancel_requested` unconfirmed past the grace -> `failed`/`cancel_unconfirmed`; run past its timeout or queued past `JOB_QUEUE_WAIT_SECONDS` -> remaining batches cancelled/timed out and the run `timed_out`; runs with all batches terminal are finalized. Tests not yet run are recorded (`cancelled`/`skipped`, "Not run: ...") so none is silently missing.
+- **Restart behavior:** after a worker restart its unacknowledged message may be redelivered later; it is harmless (the batch was re-dispatched with a new id). Recovery never depends on the broker. The first lease must expire (60 s by default) before a lost batch is re-queued. Sandbox cleanup of a lost worker is Stage 8 (Q55).
+- **Events/audit:** every transition writes `job_events`; `run.create`, `run.cancel`, `run.start`, `run.finish` (and refused starts) write `audit_events`.
+
+## Remaining TODO (Stage 8)
+Threat model, real executor and sandbox cleanup by label, artifact flow detail, residual risks.

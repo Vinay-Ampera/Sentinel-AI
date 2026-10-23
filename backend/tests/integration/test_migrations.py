@@ -26,7 +26,7 @@ EXPECTED_PUBLIC = {
     "planned_tests", "approvals", "test_runs", "test_batches", "test_results",
     "job_events", "findings", "finding_events", "finding_evidence",
     "verification_attempts", "regression_tests", "llm_usage", "policies",
-    "audit_events", "state_transitions",
+    "audit_events", "state_transitions", "test_batch_items",
 }  # fmt: skip
 EXPECTED_APP_USER = {"roles", "users", "sessions", "password_reset_tokens"}
 
