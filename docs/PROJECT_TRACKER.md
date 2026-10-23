@@ -18,7 +18,7 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 7 | Job queue, batches, cancellation, recovery | Completed | Section 7 (2026-10-23 Stage 7 entry); migrations 0003-0005 not yet applied to the real DB; uncommitted |
 | 8 | Sandboxed execution foundation | Completed | Section 7 (2026-10-23 Stage 8 entry); uncommitted; no migration |
 | 9 | First QA execution path | Completed | Section 7 (2026-10-24 Stage 9 entry); uncommitted; migration 0006 not applied to the real DB |
-| 10 | Security integrations and finding verification | Pending | Not started |
+| 10 | Security integrations and finding verification | Completed (Bandit, dependency audit verified; Semgrep and ZAP integrated but not verified against the real tools: Q73, Q75) | Section 7 (Stage 10 entries); uncommitted; migrations 0007-0008 not applied to the real DB |
 | 11 | LangGraph workflows and selective Gemini | Pending | Not started |
 | 12 | Observability, alerts, failure-to-test loop | Pending | Not started |
 | 13 | Accessibility, LLM/agent security, telemetry | Pending | Not started |
@@ -28,22 +28,21 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 
 Owner review/commit state: Stages 0-5 are committed and pushed (owner report, 2026-10-22). Stage 6 is implemented but **uncommitted**.
 
-## 2. Latest verified results (Stage 9 completion, 2026-10-24)
+## 2. Latest verified results (Stage 10 completion; latest run 2026-10-23: 592 passed, 4 skipped with DB + Docker, no Redis; see the Stage 10 completion entry in section 7)
 
-Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-alpine` container (127.0.0.1:56379) and the local Docker daemon (sandbox containers only, each test under its own scope label and removed afterwards). Nothing was run against the live `sentinel-ai` database, your dev Redis container, a live API server or a browser; `backend/.env` was not read. After the runs the daemon held 0 sandbox containers.
+Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-alpine` container (127.0.0.1:56379, stopped afterwards) and the local Docker daemon (sandbox containers only, each test under its own scope label; 0 left). Nothing was run against the live `sentinel-ai` database, your dev Redis or `backend/.env`.
 
 | Configuration | Result |
 |---|---|
-| A: DB + Redis + Docker | 453 passed (1 upstream httpx/starlette warning) |
-| B: DB + Docker, no Redis | 449 passed, 4 skipped (real-broker tests) |
-| C: no DB, no Redis, Docker present | 301 passed, 152 skipped |
-| D: DB, no Redis, no Docker daemon | 386 passed, 67 skipped (Docker tests skip by design) |
-| E: nothing available | 252 passed, 201 skipped |
-| `ruff check` / `ruff format --check` | clean (110 files) |
-| `mypy` | clean (73 source files) |
-| Frontend | `npm run lint` clean; `npm test` 24 passed (4 files; 13 new); `npm run build` ok |
-| Stage 9 tests | unit 57 (`test_pytest_runner.py`); Docker/pytest 19 (`test_sandbox_pytest.py`); end-to-end 5 (`test_pytest_e2e.py`); migration 2 (in `test_migrations.py`); real worker process + Redis + Docker running pytest 1 (in `test_celery_broker.py`); frontend 13 |
-| Database changes in Stage 9 | one migration, `0006_test_cases` (tested up/down on the disposable DB; **not applied to the real DB**, nor are 0003-0005) |
+| DB + Redis + Docker | 503 passed (1 upstream httpx/starlette warning) |
+| Docker present, no DB, no Redis | 336 passed, 167 skipped |
+| Earlier in the stage: DB + Docker, no Redis | 497 passed, 4 skipped (real-broker tests) |
+| `ruff check` / `ruff format --check` | clean (128 files; 2026-10-23 completion run) |
+| `mypy` | clean (78 source files) |
+| Frontend | `npm run lint` clean; `npm test` 34 passed (5 files; 10 new); `npm run build` ok |
+| Stage 10 tests | unit 35 (`test_bandit_scanner.py`); integration 13 (`test_findings.py`: 10 DB-level incl. API/authorization, 3 real Bandit-in-Docker); migrations 2 (`test_migrations.py`); frontend 10 |
+| Not re-run for Stage 10 | the "no Docker daemon" and "nothing available" configurations of Stage 9 (Docker tests skip by design; not re-measured) |
+| Database changes | one migration, `0007_findings` (up and down tested on the disposable DB; **not applied to the real DB**, nor are 0003-0006) |
 
 ## 3. Decisions and scope (pointers and summaries)
 
@@ -62,8 +61,8 @@ Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-al
 
 ## 4. Remaining work and known issues
 
-- Stage 9 is implemented and **uncommitted** (Stages 7-8 are committed); Stage 10 (security integrations) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
-- Owner actions for Stages 6-9: review and commit; apply migrations 0003-0006 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0006_test_cases --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
+- Stage 10 is implemented and **uncommitted** (Stages 0-9 are committed, HEAD 1c3fd06); Stage 11 is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
+- Owner actions for Stages 6-9: review and commit; apply migrations 0003-0007 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0007_findings --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
 - Execution: `JOB_EXECUTOR=stub` is still the default (every test `skipped`, "Not executed"). `JOB_EXECUTOR=docker` is an explicit opt-in that runs only the fixed `sandbox_smoke` command in network-less containers; project code runs only if the operator opts in (Stage 9). Build the image first: `make -C backend sandbox-image` (now vendors pytest from the lock file; rebuild after Stage 9). Running a project's own tests (`pytest_unit`) is a further opt-in (`SANDBOX_ALLOW_PROJECT_CODE` + a stronger runtime or `SANDBOX_ACCEPT_SHARED_KERNEL=true`). Follow-ups: Q58-Q64 (Stage 8), Q65-Q72 (Stage 9). No new environment variables were added, so `.env`/`.env.example` need no change.
 - Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
 - Asynchronous analysis stays synchronous (Q37 deferred again, Q52); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
@@ -399,3 +398,30 @@ Acceptance criteria: a user can select an approved plan, start a run, watch prog
 Known issues: Q65-Q72 in OPEN_QUESTIONS.md. Most real projects will report error until a dependency path exists (Q66).
 Next action: owner review and commit; rebuild the image (make sandbox-image); apply migrations 0003-0006 to the real database; Stage 10 on approval.
 ```
+
+### Stage 10 - Security integrations and finding verification (2026-10-24)
+Date: 2026-10-24
+Owner go-ahead: "go with stage 10 ... do not start stage 11"; owner approved adding Bandit via `poetry add --group dev bandit` (network to PyPI; `poetry.lock` updated; no other network use).
+Built: `bandit_static` fixed sandbox command (`python -P -m bandit`, vendored offline, not a project-code check); `execution/bandit_report.py` (defensive parse, no code snippets, secret-quoting messages redacted, stable fingerprints); `ScanOutcome`/`FindingResult` in the executor interface; Bandit status mapping (valid report required for `passed`); migration `0007_findings`; `repositories/findings.py`, `services/findings.py` (ingest, de-duplication, reopen, re-scan verification, review states, human verification), `api/findings.py` + `schemas/findings.py` (list, detail, status, verification); worker hook `_store_findings`; `sandbox/vendor.py` (Bandit stack, PyYAML C accelerator skipped, dist-info entry points kept); frontend `features/findings/` + API client; ADR-0007; threat model T17-T21; docs and Q73-Q80.
+Acceptance: every finding links to its stored scan report (tested); scanner output is `unverified`, never confirmed (tested; `confirmed` needs a person, a note and evidence, also refused by the DB); unauthorized targets and intrusive profiles stay blocked because Semgrep/dependency audit/ZAP/load have no runner and the planning gates are unchanged (tested: no runner, approval flags); findings show severity, tool confidence, verification state and limitations (API and UI tested).
+Bugs found by tests and fixed: a scan was attached to timed-out/cancelled/OOM outcomes (now only for a scan that ran to its own end); my first policy let developers mark `false_positive` (the documented matrix says Admin+; corrected and tested).
+NOT run: the real database, dev Redis, a live API server, a browser (no axe), Semgrep, dependency audit, OWASP ZAP (none built), any non-Python scanner, gVisor/Kata, load tests.
+Known issues: Q73-Q80. Next action: owner review and commit; rebuild the image (`make -C backend sandbox-image`); apply migrations 0003-0007 to the real database after review; Stage 11 on approval.
+
+### Stage 10 (completion) - Semgrep, offline dependency audit, ZAP, de-duplication (2026-10-23)
+Date: 2026-10-23
+Owner request: finish Stage 10 (Semgrep offline, dependency audit with an offline advisory strategy, ZAP via Docker with strict gating, cross-scanner dedup, normalization, tests, docs). No accessibility work.
+Environment: **no outbound network** (probing was denied), no Semgrep, ZAP image, pip-audit or advisory data. Decisions in ADR-0008; Q73-Q75, Q79 updated, Q81-Q86 opened.
+Built: `semgrep_static`, `dependency_audit`, `zap_baseline`, `zap_active` fixed commands (per-kind image); `execution/{report_common,scan_report,semgrep_report,dependency_report,zap_report}.py` (Bandit now shares `report_common`); `sandbox/dep_audit.py` + `sandbox/advisories.py` (offline audit, operator-run OSV bundle builder, image-label age check); `sandbox/semgrep-rules/` (16 local rules), `Dockerfile.semgrep`, `Dockerfile.zap`; `SandboxSpec.egress`/`EgressSpec` (validated network, pinned host, black-hole DNS) and ZAP gates in `DockerSandboxExecutor._prepare_zap`; worker passes an authorized `TargetRef`; settings `SANDBOX_SCANNER_IMAGE`, `SANDBOX_ZAP_*`, `DEPENDENCY_ADVISORY_MAX_AGE_DAYS`; migration 0008 (`cwe`, `component`, `aliases`, `group_id`, `finding_groups`); `services/dedup.py`; `GET /projects/{id}/finding-groups`; `related` on finding detail; findings panel shows tool, linked duplicates; Makefile targets; threat model T22-T31 + ZAP checklists; catalog `dependency_audit` no longer needs egress (risk low).
+Commands run: ruff check/format --check (128 files clean); mypy (84 files clean); `pytest` with a disposable PostgreSQL 16 container (127.0.0.1:55439, local image, removed afterwards) and local Docker: **592 passed, 4 skipped** (real-broker Redis tests; no Redis configured); frontend `npm test` 35 passed, `npm run lint` clean; Stage 10 additions: 100+ unit tests (`test_security_scanners.py`), 7 DB tests (`test_scanner_findings.py`), 1 Docker test (`test_scanner_docker.py`, builds a throw-away image with SYNTHETIC advisories), migration test updated.
+Verified in a real container: dependency audit end to end (lockfile parse, OSV range matching, framing, host parsing, label-based age check; `--network none`, read-only root, caps dropped). Observed: Semgrep with no scanner image ends `failed_to_start`, never a pass; ZAP unconfigured ends `blocked`.
+NOT run / NOT verified: **Semgrep** (not installed; flags, report shape, image build and bundled rules unvalidated); **OWASP ZAP** (no image; Dockerfile, script paths, report location, JVM under noexec tmpfs, and the host-firewall restriction unvalidated; no target was ever contacted); `make advisories` against OSV (never run; no real advisory data used; compaction unit-tested); real database; dev Redis; browser/axe; gVisor/Kata.
+Tests changed because behaviour legitimately changed: `test_sandbox.py` (command set), `test_bandit_scanner.py` (semgrep/deps/zap now have runners), `test_sandbox_e2e.py`/`test_pytest_e2e.py` (runner-less check is now `js_unit`/`openapi_lint`). One full-suite run showed a failure in `test_projects_api.py::test_analysis_result_...`; it passed in isolation and in the final full run (not root-caused; possibly timing).
+Known issues: Q73-Q75 (verification), Q81-Q86. Next action: owner review and commit; `make advisories`, `make sandbox-image`, `make scanner-image`; apply migrations 0003-0008 after review; verify Semgrep and ZAP per ADR-0008 before relying on them.
+
+### Stage 10 follow-up - real-tool verification (2026-10-23)
+Date: 2026-10-23
+Run (owner checklist): `make advisories` (OSV PyPI 31,031 / npm 232,804 advisories); `make sandbox-image`; real audit in the locked-down container (Django 2.2.0, lodash 4.17.20 matched real CVEs, current versions unmatched); `make scanner-image SEMGREP_VERSION=1.182.1 DOCKER_BUILD_ARGS=--network=host` (new Makefile variable, build step only); Semgrep ran offline through the executor path, 16/16 bundled rules fired correctly (`semgrep --validate` needs the network and was not usable); pulled `ghcr.io/zaproxy/zaproxy:stable` (ZAP 2.17.0), built `sentinel-zap-runner:stage10`, ran the baseline in a lab (`--internal` network, local target, same `create_argv` hardening): found and fixed three Dockerfile defects, then exit 0 / 44 s / report framed and parsed (15 alerts); migrations 0003-0008 SQL reviewed (additive only), real database was at 0007, `alembic upgrade head` applied 0008 (now head); tests: full run 591 passed + 1 failed (the sandbox env allowlist test, because `entry.py` now sets two constant SEMGREP_* variables; allowlist extended for exactly those two and their values asserted; that file then passed, 30/30); ruff/format/mypy clean.
+NOT done: host-firewall restriction for ZAP (needs root), ZAP against a public/authorized remote target, `zap_active`, OSV licence review (Q82), scheduled advisory refresh. ZAP remains disabled (`SANDBOX_ZAP_*` unset, attestation false).
+Next action: owner review; provision and test the firewalled ZAP network, then enable ZAP per the threat-model checklist; Stage 11 on approval.
+

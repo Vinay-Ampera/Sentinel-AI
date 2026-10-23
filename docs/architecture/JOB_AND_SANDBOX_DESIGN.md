@@ -83,5 +83,11 @@ Docker is not a complete boundary against hostile code. Evaluate rootless Docker
 - The worker re-checks ownership after every execution, records a test that hit its own timeout and continues with the next one, writes explicit `not_run` results for tests that never started, and stores cases then evidence (never losing the committed result).
 - API: `GET /test-runs/{run}/results/{result}` (result + cases + evidence descriptors), `GET /artifacts/{id}/content` (run evidence only), progress includes `cases_by_status`.
 
-## Remaining TODO (Stage 10+)
+## Static security scanning (implemented in Stage 10; ADR-0007)
+- `bandit_static` is a fixed, non-project-code command (`python -P -m bandit -r . -f json -o /tmp/bandit.json ...`; `-P` keeps the project off `sys.path`). Bandit and its pure-Python dependencies are vendored like pytest (`sandbox/vendor.py`; PyYAML's C accelerator is skipped). The report returns through the same nonce-framed channel and is parsed by `execution/bandit_report.py`; Bandit's code snippets are dropped and the stored `bandit.json` is re-serialized from validated fields.
+- Status: exit 0/1 with a valid report -> `passed` (no issues, none unreadable), `failed` (issues, each unverified) or `error` (files unreadable and nothing reported). Anything else gives no scan at all.
+- The worker turns a scan into findings (`services/findings.ingest_scan`): new fingerprint -> `new`/`unverified` row + evidence link; seen again -> counted; reported again after `fixed`/`verified_fixed` -> `reopened`; a *complete* later scan of the same source that no longer reports an open finding records a `rescan` verification attempt (`fixed`, then `verified_fixed`). Failures here never lose the committed result.
+- Semgrep, dependency audit and ZAP have no runner (Q73-Q75); intrusive checks remain gated at planning and cannot execute.
+
+## Remaining TODO (Stage 11+)
 Dependency path for projects with third-party imports (Q66), allow-listed egress and localhost-target reach (Q26/Q60), browser tests (Playwright, Q69), JavaScript runners, evidence retention (Q70), stronger runtime tested for real (Q59).

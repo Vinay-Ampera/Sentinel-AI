@@ -10,3 +10,7 @@ progress { width: 10rem; }
 .cases { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .cases th, .cases td { border-bottom: 1px solid var(--border); padding: 0.25rem 0.4rem; text-align: left; }
 .evidence-view { max-height: 24rem; overflow: auto; background: var(--accent-bg); padding: 0.6rem; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 0.8rem; }
+.severity-critical, .severity-high { border-color: #b3261e; }
+.severity-medium { border-color: #b26a00; }
+.finding-detail { margin-top: 0.5rem; }
+.finding-detail .row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; margin: 0.4rem 0; }

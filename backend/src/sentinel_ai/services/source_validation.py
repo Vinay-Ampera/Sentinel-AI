@@ -88,6 +88,15 @@ def _check_public_host(host: str) -> None:
         raise SourceRejected("invalid_url", "Host name is not valid")
 
 
+def require_public_host(host: str) -> None:
+    """Public, DNS-named hosts only (raises ``SourceRejected``); for re-checks at use time."""
+    _check_public_host(host)
+
+
+def is_global_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return _is_public_ip(ip)
+
+
 def validate_git_url(raw: str) -> ValidatedUrl:
     """Public HTTPS Git URLs only: no credentials, no SSH/git/file schemes, no query."""
     parts = _split(raw, ("https",))

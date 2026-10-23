@@ -135,6 +135,25 @@ class Settings(DatabaseSettings):
     # the shared-kernel risk of plain Docker.
     sandbox_allow_project_code: bool = False
     sandbox_accept_shared_kernel: bool = False
+    # --- Security scanners (Stage 10) ---
+    # Semgrep is a compiled binary, so it lives in its own image built with network access by
+    # the operator (sandbox/Dockerfile.semgrep). Rules are local files baked into that image.
+    sandbox_scanner_image: str = "sentinel-scanner-runner:stage10"
+    # The dependency audit is offline; refuse results from advisory data older than this
+    # (the date is read from the image label set at build time, never from the container).
+    dependency_advisory_max_age_days: int = 30
+    # OWASP ZAP is the only sandbox that may have a network, and only toward one authorized
+    # development/staging host. It stays disabled unless the operator names its image and an
+    # egress-restricted Docker network AND attests that the host firewall limits that network
+    # (docs/architecture/SANDBOX_THREAT_MODEL.md, "ZAP network").
+    sandbox_zap_image: str | None = None
+    sandbox_zap_network: str | None = None
+    sandbox_zap_egress_attested: bool = False
+    sandbox_zap_memory_mb: int = 2048
+    sandbox_zap_tmp_mb: int = 256
+    sandbox_zap_workspace_mb: int = 64
+    sandbox_zap_pids: int = 512
+    sandbox_zap_timeout_seconds: int = 1200
 
     # --- LLM (consumed from Stage 11) ---
     gemini_api_key: SecretStr | None = None
@@ -188,6 +207,12 @@ class Settings(DatabaseSettings):
         "sandbox_test_timeout_seconds",
         "sandbox_output_cap_bytes",
         "sandbox_start_timeout_seconds",
+        "dependency_advisory_max_age_days",
+        "sandbox_zap_memory_mb",
+        "sandbox_zap_tmp_mb",
+        "sandbox_zap_workspace_mb",
+        "sandbox_zap_pids",
+        "sandbox_zap_timeout_seconds",
         "llm_max_tokens_per_run",
         "llm_max_cost_usd_per_run",
         "llm_max_cost_usd_per_day",
@@ -212,6 +237,18 @@ class Settings(DatabaseSettings):
     def _sandbox_limits(self) -> "Settings":
         if not re.fullmatch(r"[a-z0-9][a-z0-9_./:@-]{0,199}", self.sandbox_image):
             raise ValueError("SANDBOX_IMAGE must be a plain image reference")
+        image_ref = r"[a-z0-9][a-z0-9_./:@-]{0,199}"
+        for name, ref in (("SANDBOX_SCANNER_IMAGE", self.sandbox_scanner_image),
+                          ("SANDBOX_ZAP_IMAGE", self.sandbox_zap_image)):  # fmt: skip
+            if ref is not None and not re.fullmatch(image_ref, ref):
+                raise ValueError(f"{name} must be a plain image reference")
+        if self.sandbox_zap_network is not None and (
+            not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}", self.sandbox_zap_network)
+            or self.sandbox_zap_network in ("host", "bridge", "none")
+        ):
+            raise ValueError("SANDBOX_ZAP_NETWORK must be a dedicated user-defined network name")
+        if self.sandbox_zap_tmp_mb >= self.sandbox_zap_memory_mb:
+            raise ValueError("SANDBOX_ZAP_TMP_MB must be smaller than SANDBOX_ZAP_MEMORY_MB")
         if self.sandbox_runtime is not None and not re.fullmatch(
             r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}", self.sandbox_runtime
         ):

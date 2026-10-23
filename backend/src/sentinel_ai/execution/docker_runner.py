@@ -111,6 +111,19 @@ class DockerRunner:
     def image_exists(self, image: str) -> bool:
         return self._docker("image", "inspect", "--format", "{{.Id}}", image, timeout=10)[0] == 0
 
+    def image_label(self, image: str, label: str) -> str | None:
+        """A label of a local image (set at build time, so it is the operator's word and not
+        something the container can say about itself)."""
+        code, out = self._docker("image", "inspect", "--format", "{{json .Config.Labels}}", image, timeout=10)  # fmt: skip
+        if code != 0:
+            return None
+        try:
+            labels = json.loads(out)
+        except ValueError:
+            return None
+        value = labels.get(label) if isinstance(labels, dict) else None
+        return value if isinstance(value, str) else None
+
     def _inspect(self, name: str) -> dict[str, Any]:
         code, out = self._docker("inspect", name)
         if code != 0:

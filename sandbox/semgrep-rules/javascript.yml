@@ -1,0 +1,74 @@
+# Sentinel starter rules for JavaScript and TypeScript. Authored for this repository.
+# Semgrep has not been run against this file in the development environment (ADR-0008).
+rules:
+  - id: sentinel.javascript.eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval runs a string as code; a value that is not a literal can become code injection.
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      confidence: MEDIUM
+      category: security
+    patterns:
+      - pattern: eval($X)
+      - pattern-not: eval("...")
+
+  - id: sentinel.javascript.new-function
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: new Function compiles a string into code, like eval.
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      confidence: MEDIUM
+      category: security
+    pattern: new Function(...)
+
+  - id: sentinel.javascript.child-process-exec
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: child_process.exec runs its argument through a shell; prefer execFile with an argument array.
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      confidence: MEDIUM
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: child_process.exec($CMD, ...)
+          - pattern: child_process.execSync($CMD, ...)
+      - pattern-not: child_process.exec("...", ...)
+      - pattern-not: child_process.execSync("...", ...)
+
+  - id: sentinel.javascript.inner-html
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: Assigning to innerHTML or outerHTML parses the value as markup; untrusted values cause cross-site scripting.
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"]
+      confidence: LOW
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: $EL.innerHTML = $X
+          - pattern: $EL.outerHTML = $X
+      - pattern-not: $EL.innerHTML = "..."
+      - pattern-not: $EL.outerHTML = "..."
+
+  - id: sentinel.javascript.document-write
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: document.write inserts markup into the page; untrusted values cause cross-site scripting.
+    metadata:
+      cwe: ["CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"]
+      confidence: LOW
+      category: security
+    pattern: document.write(...)
+
+  - id: sentinel.javascript.tls-reject-unauthorized-false
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: TLS certificate verification is disabled (rejectUnauthorized false).
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      confidence: HIGH
+      category: security
+    pattern: "{..., rejectUnauthorized: false, ...}"

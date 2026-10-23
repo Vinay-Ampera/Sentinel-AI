@@ -90,6 +90,26 @@ function checkResult(result) {
   return result
 }
 
+function checkFinding(f) {
+  const ok =
+    f &&
+    typeof f.id === 'string' &&
+    typeof f.title === 'string' &&
+    typeof f.severity === 'string' &&
+    typeof f.confidence === 'string' &&
+    typeof f.status === 'string' &&
+    typeof f.verification_state === 'string'
+  if (!ok) throw bad('finding')
+  return f
+}
+
+function checkFindingDetail(f) {
+  checkFinding(f)
+  if (!Array.isArray(f.events) || !Array.isArray(f.evidence) || !Array.isArray(f.attempts)) throw bad('finding detail')
+  if (f.related !== undefined && !Array.isArray(f.related)) throw bad('finding detail')
+  return f
+}
+
 // Evidence is untrusted text from a sandbox: fetched as text, never rendered as HTML, and
 // shortened for display (the full file stays downloadable).
 const EVIDENCE_LIMIT = 200_000
@@ -188,6 +208,21 @@ export const api = {
     const data = checkResult(await request('GET', `/test-runs/${runId}/results/${resultId}`))
     if (!Array.isArray(data.cases) || !Array.isArray(data.evidence)) throw bad('result detail')
     return data
+  },
+  async listFindings(projectId, filters = {}) {
+    const q = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString()
+    const data = await request('GET', `/projects/${projectId}/findings${q ? `?${q}` : ''}`)
+    if (!Array.isArray(data)) throw bad('findings')
+    return data.map(checkFinding)
+  },
+  async getFinding(findingId) {
+    return checkFindingDetail(await request('GET', `/findings/${findingId}`))
+  },
+  async setFindingStatus(findingId, status, note) {
+    return checkFindingDetail(await request('POST', `/findings/${findingId}/status`, { status, note: note || null }))
+  },
+  async setFindingVerification(findingId, state, note) {
+    return checkFindingDetail(await request('POST', `/findings/${findingId}/verification`, { state, note }))
   },
   getEvidenceText(artifactId) {
     return requestText(`/artifacts/${artifactId}/content`)

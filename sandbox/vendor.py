@@ -12,7 +12,14 @@ import shutil
 import sys
 from pathlib import Path
 
-PACKAGES = ("pytest", "pluggy", "iniconfig", "packaging", "pygments")
+PACKAGES = (
+    "pytest", "pluggy", "iniconfig", "packaging", "pygments",
+    "bandit", "stevedore", "pyyaml", "rich", "markdown-it-py", "mdurl",
+)  # fmt: skip
+# Optional C accelerators with a pure-Python fallback; skipped rather than refused.
+OPTIONAL_COMPILED = {"pyyaml": "yaml/_yaml"}
+# Kept so plugin entry points (Bandit's tests and formatters) can be discovered offline.
+KEEP_METADATA = ("METADATA", "entry_points.txt")
 DEST = Path(__file__).resolve().parent / "vendor"
 
 
@@ -26,9 +33,13 @@ def main() -> int:
         versions[name] = dist.version
         for f in dist.files or []:
             parts = f.parts
-            if parts[0].endswith((".dist-info", ".data")) or "__pycache__" in parts or parts[0] == "..":
+            if parts[0] == ".." or "__pycache__" in parts or parts[0].endswith(".data"):
+                continue
+            if parts[0].endswith(".dist-info") and f.name not in KEEP_METADATA:
                 continue
             if f.suffix in {".so", ".pyd", ".dylib"}:
+                if str(f).startswith(OPTIONAL_COMPILED.get(name, "\0")):
+                    continue
                 print(f"refusing a compiled extension: {f}", file=sys.stderr)
                 return 1
             src = Path(str(dist.locate_file(f)))

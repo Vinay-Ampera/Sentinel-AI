@@ -54,3 +54,4 @@ Thumbs.db
 *.swp
 celerybeat-schedule*
 sandbox/vendor/
+sandbox/advisories/*.json

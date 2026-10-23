@@ -6,6 +6,7 @@ shell, no bind mount, no volume, no device, no environment pass-through, no Dock
 and no network. Tests assert these properties on the generated vector.
 """
 
+import ipaddress
 import re
 import uuid
 from dataclasses import dataclass
@@ -17,7 +18,7 @@ LABEL_BATCH = "sentinel.sandbox.batch"
 RUNNER_UID = "65534:65534"
 RESULT_MAX_BYTES = 2 * 1024 * 1024  # largest result file the in-image runner will frame
 _NONCE = re.compile(r"[0-9a-f]{16,64}")
-_RESULT_PATH = re.compile(r"/tmp/[A-Za-z0-9_.-]{1,64}")
+_RESULT_PATH = re.compile(r"/(?:tmp|workspace)/[A-Za-z0-9_.-]{1,64}")
 
 _IMAGE = re.compile(r"[a-z0-9][a-z0-9_./:@-]{0,199}")
 _PLAIN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}")
@@ -38,6 +39,39 @@ class SandboxLimits:
     output_cap_bytes: int
 
 
+_HOST = re.compile(
+    r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?){1,10}"
+)
+BLACKHOLE_DNS = "192.0.2.1"  # TEST-NET-1 (RFC 5737): nothing answers, so only pinned names resolve
+
+
+@dataclass(frozen=True)
+class EgressSpec:
+    """The one exception to ``--network none`` (Stage 10, ZAP against an authorized target).
+
+    ``network`` is a Docker network the operator provisioned and attested to have host-firewall
+    egress rules allowing only the scan targets (see SANDBOX_THREAT_MODEL.md). The target host
+    is pinned to the address the worker resolved and verified as public, and DNS points at a
+    black hole, so the container can resolve no other name.
+    """
+
+    network: str
+    host: str
+    ip: str
+
+    def validate(self) -> None:
+        if not _PLAIN.fullmatch(self.network) or self.network in ("host", "bridge", "none"):
+            raise ValueError("invalid egress network")
+        if not _HOST.fullmatch(self.host):
+            raise ValueError("invalid egress host")
+        try:
+            ip = ipaddress.ip_address(self.ip)
+        except ValueError:
+            raise ValueError("invalid egress address") from None
+        if not ip.is_global or ip.is_multicast:
+            raise ValueError("egress address must be public")
+
+
 @dataclass(frozen=True)
 class SandboxSpec:
     image: str
@@ -50,6 +84,7 @@ class SandboxSpec:
     runtime: str | None = None
     result_file: str | None = None  # file under /tmp the runner frames onto stdout at the end
     result_nonce: str | None = None
+    egress: EgressSpec | None = None
 
     def validate(self) -> None:
         if not _IMAGE.fullmatch(self.image):
@@ -60,6 +95,8 @@ class SandboxSpec:
             raise ValueError("invalid runtime name")
         if not self.command or any(("\x00" in a or not a) for a in self.command):
             raise ValueError("invalid command")
+        if self.egress is not None:
+            self.egress.validate()
         if (self.result_file is None) != (self.result_nonce is None):
             raise ValueError("result file and nonce go together")
         if self.result_file is not None and not _RESULT_PATH.fullmatch(self.result_file):
@@ -90,6 +127,16 @@ def labels(spec: SandboxSpec) -> dict[str, str]:
     }
 
 
+def _network_args(egress: EgressSpec | None) -> list[str]:
+    if egress is None:
+        return ["--network", "none"]
+    return [
+        "--network", egress.network,
+        "--add-host", f"{egress.host}:{egress.ip}",
+        "--dns", BLACKHOLE_DNS,
+    ]  # fmt: skip
+
+
 def create_argv(docker_bin: str, name: str, spec: SandboxSpec) -> list[str]:
     """`docker create ...` for one disposable, locked-down container."""
     spec.validate()
@@ -99,7 +146,7 @@ def create_argv(docker_bin: str, name: str, spec: SandboxSpec) -> list[str]:
     argv = [
         docker_bin, "create", "--name", name,
         *[a for k, v in labels(spec).items() for a in ("--label", f"{k}={v}")],
-        "--network", "none",
+        *_network_args(spec.egress),
         "--read-only",
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",

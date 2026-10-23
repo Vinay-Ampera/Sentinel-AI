@@ -159,13 +159,22 @@ def emit_result(path: str, nonce: str, limit: int) -> None:
 
 def run_command(argv: list[str], timeout: float, cwd: str) -> int:
     env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        # Image-level settings (set by the image build, never by a request): the scanner and
+        # ZAP images keep the vendored pure-Python stack off the path or add their own tools.
+        "PATH": os.environ.get("SENTINEL_PATH", "/usr/local/bin:/usr/bin:/bin"),
         "HOME": "/tmp",
         "LANG": "C.UTF-8",
-        "PYTHONPATH": "/opt/sentinel/site",  # vendored pytest, read-only
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "SEMGREP_SEND_METRICS": "off",
+        "SEMGREP_ENABLE_VERSION_CHECK": "0",
     }
+    site = os.environ.get("SENTINEL_PYTHONPATH", "/opt/sentinel/site")  # vendored pytest, read-only
+    if site:
+        env["PYTHONPATH"] = site
+    java = os.environ.get("SENTINEL_JAVA_TOOL_OPTIONS")  # ZAP image: user.home is not /nonexistent
+    if java:
+        env["JAVA_TOOL_OPTIONS"] = java
     proc = subprocess.Popen(  # noqa: S603 - argv comes from the worker's fixed table
         argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, start_new_session=True
     )

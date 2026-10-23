@@ -58,7 +58,10 @@ Broker tests: set `TEST_DATABASE_URL` (a `*_test` database) and `TEST_REDIS_URL`
 ## Sandbox (Stage 8)
 Checks run in disposable Docker containers only when you opt in with `JOB_EXECUTOR=docker` (default `stub`). Containers have no network, a read-only root filesystem, no capabilities, a non-root user and CPU/memory/process/disk/time limits; the source archive is streamed over stdin and nothing from the host is mounted. Two checks have runners: `sandbox_smoke` (unpacks the uploaded ZIP and counts files; no project code runs) and `pytest_unit` (runs the **project's own pytest suite**; off by default, see below). Other checks are recorded as skipped.
 ```bash
-make sandbox-image                                  # vendors pytest from poetry.lock, then builds sentinel-sandbox-runner:stage8 (no network)
+make sandbox-image                                  # vendors pytest and Bandit from poetry.lock, bakes in sandbox/advisories, builds sentinel-sandbox-runner:stage8 (no network)
+make advisories                                     # OPERATOR step, needs network: downloads OSV advisory data for the offline dependency audit
+make scanner-image SEMGREP_VERSION=<pin>            # needs network at build time: base image + Semgrep + bundled local rules (unverified, ADR-0008)
+make zap-image ZAP_BASE=<reviewed image>            # ZAP runner (unverified; read the ZAP checklist in SANDBOX_THREAT_MODEL.md first)
 JOB_EXECUTOR=docker make worker                      # the worker host needs a Docker daemon
 poetry run pytest tests/integration/test_sandbox_docker.py   # Docker tests (skip if no daemon or image)
 ```

@@ -1,0 +1,120 @@
+# Sentinel starter rules for Python. Authored for this repository (no registry download).
+# Semgrep has not been run against this file in the development environment (see
+# docs/decisions/ADR-0008): extend it only with rules you have run `semgrep --validate` on.
+rules:
+  - id: sentinel.python.subprocess-shell-true
+    languages: [python]
+    severity: ERROR
+    message: A subprocess call uses shell=True, so a value that reaches the command can inject shell syntax.
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      confidence: MEDIUM
+      category: security
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: sentinel.python.os-system
+    languages: [python]
+    severity: WARNING
+    message: os.system runs its argument through a shell.
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      confidence: MEDIUM
+      category: security
+    pattern: os.system(...)
+
+  - id: sentinel.python.eval-exec
+    languages: [python]
+    severity: ERROR
+    message: eval/exec runs a string as code; a value that is not a literal can become code injection.
+    metadata:
+      cwe: ["CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"]
+      confidence: MEDIUM
+      category: security
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: sentinel.python.pickle-load
+    languages: [python]
+    severity: WARNING
+    message: Unpickling data can run arbitrary code if the data is not fully trusted.
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      confidence: MEDIUM
+      category: security
+    pattern-either:
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+
+  - id: sentinel.python.yaml-unsafe-load
+    languages: [python]
+    severity: ERROR
+    message: yaml.load without a safe Loader can construct arbitrary Python objects.
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      confidence: HIGH
+      category: security
+    patterns:
+      - pattern: yaml.load(...)
+      - pattern-not: yaml.load(..., Loader=yaml.SafeLoader, ...)
+      - pattern-not: yaml.load(..., Loader=yaml.CSafeLoader, ...)
+
+  - id: sentinel.python.weak-hash
+    languages: [python]
+    severity: WARNING
+    message: MD5 and SHA-1 are broken for security purposes (passwords, signatures, integrity against an attacker).
+    metadata:
+      cwe: ["CWE-327: Use of a Broken or Risky Cryptographic Algorithm"]
+      confidence: MEDIUM
+      category: security
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+
+  - id: sentinel.python.requests-verify-false
+    languages: [python]
+    severity: ERROR
+    message: TLS certificate verification is disabled for an HTTP request.
+    metadata:
+      cwe: ["CWE-295: Improper Certificate Validation"]
+      confidence: HIGH
+      category: security
+    pattern-either:
+      - pattern: requests.$FUNC(..., verify=False, ...)
+      - pattern: httpx.$FUNC(..., verify=False, ...)
+
+  - id: sentinel.python.flask-debug-true
+    languages: [python]
+    severity: ERROR
+    message: Flask runs with debug=True, which exposes an interactive debugger that can execute code.
+    metadata:
+      cwe: ["CWE-489: Active Debug Code"]
+      confidence: HIGH
+      category: security
+    pattern: $APP.run(..., debug=True, ...)
+
+  - id: sentinel.python.tempfile-mktemp
+    languages: [python]
+    severity: WARNING
+    message: tempfile.mktemp is racy; another process can create the file between the name check and its use.
+    metadata:
+      cwe: ["CWE-377: Insecure Temporary File"]
+      confidence: HIGH
+      category: security
+    pattern: tempfile.mktemp(...)
+
+  - id: sentinel.python.sql-string-building
+    languages: [python]
+    severity: WARNING
+    message: A SQL statement is built from a formatted string; pass values as query parameters instead.
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      confidence: LOW
+      category: security
+    pattern-either:
+      - pattern: $CUR.execute(f"...{...}...", ...)
+      - pattern: $CUR.execute("..." % ..., ...)
+      - pattern: $CUR.execute("...".format(...), ...)

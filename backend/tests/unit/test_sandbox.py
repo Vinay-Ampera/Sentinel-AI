@@ -112,9 +112,16 @@ def test_invalid_specs_never_reach_docker(bad: dict) -> None:
         create_argv("docker", "n", spec(**bad))
 
 
-def test_only_the_smoke_check_has_a_runner_and_it_never_comes_from_input() -> None:
-    assert set(commands.COMMANDS) == {"sandbox_smoke", "pytest_unit"}
-    assert commands.lookup("semgrep_static") is None and commands.lookup("; rm -rf /") is None
+def test_only_listed_checks_have_a_runner_and_it_never_comes_from_input() -> None:
+    assert set(commands.COMMANDS) == {
+        "sandbox_smoke", "pytest_unit", "bandit_static", "semgrep_static", "dependency_audit",
+        "zap_baseline", "zap_active",
+    }  # fmt: skip
+    assert commands.lookup("load_basic") is None and commands.lookup("; rm -rf /") is None
+    # only the ZAP checks may ever ask for a network target, and only they use the ZAP image
+    assert {c.check_id for c in commands.COMMANDS.values() if c.needs_target} == {"zap_baseline", "zap_active"}  # fmt: skip
+    assert {c.check_id for c in commands.COMMANDS.values() if c.image == commands.IMAGE_ZAP} == {"zap_baseline", "zap_active"}  # fmt: skip
+    assert not any(c.needs_network for c in commands.COMMANDS.values())
     smoke = commands.lookup("sandbox_smoke")
     assert smoke and not smoke.needs_network and smoke.argv[:2] == ("python", "-I")
 
@@ -312,7 +319,7 @@ def test_executor_output_cannot_forge_a_result(tmp_path: Path) -> None:
 
 def test_nothing_starts_for_unknown_unsupported_or_unverified_work(tmp_path: Path) -> None:
     executor, runner, ref = _executor(tmp_path, SandboxResult(started=True, exit_code=0))
-    assert executor.execute(_req(ref, "semgrep_static"), lambda: False).status == "skipped"
+    assert executor.execute(_req(ref, "load_basic"), lambda: False).status == "skipped"
     assert executor.execute(_req(ref, "rm -rf /"), lambda: False).status == "skipped"
     assert executor.execute(_req(None), lambda: False).status == "blocked"  # no workspace
     assert executor.execute(_req(ref), lambda: True).status == "cancelled"  # stop before start

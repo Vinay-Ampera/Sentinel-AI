@@ -72,3 +72,30 @@ describe('api client', () => {
     await expect(api.getEvidenceText('a2')).rejects.toMatchObject({ status: 404, message: 'Evidence not found' })
   })
 })
+
+describe('findings client', () => {
+  const f = { id: 'f', title: 't', severity: 'high', confidence: 'low', status: 'new', verification_state: 'unverified' }
+  it('lists with filters and rejects malformed data', async () => {
+    fetch.mockImplementation(() => json(200, [f]))
+    await api.listFindings('p', { status: 'new', severity: '' })
+    expect(fetch.mock.calls[0][0]).toBe('/api/v1/projects/p/findings?status=new')
+    fetch.mockImplementation(() => json(200, [{ id: 'f' }]))
+    await expect(api.listFindings('p')).rejects.toMatchObject({ code: 'bad_response' })
+    fetch.mockImplementation(() => json(200, { items: [] }))
+    await expect(api.listFindings('p')).rejects.toMatchObject({ code: 'bad_response' })
+  })
+
+  it('posts status and verification with the CSRF token and requires a full detail back', async () => {
+    api.setCsrfToken('tok')
+    const detail = { ...f, events: [], evidence: [], attempts: [] }
+    fetch.mockImplementation(() => json(200, detail))
+    await api.setFindingStatus('f', 'triaged', '')
+    expect(fetch.mock.calls[0][0]).toBe('/api/v1/findings/f/status')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ status: 'triaged', note: null })
+    expect(fetch.mock.calls[0][1].headers['X-CSRF-Token']).toBe('tok')
+    await api.setFindingVerification('f', 'likely', 'Reproduced by hand')
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ state: 'likely', note: 'Reproduced by hand' })
+    fetch.mockImplementation(() => json(200, f))
+    await expect(api.getFinding('f')).rejects.toMatchObject({ code: 'bad_response' })
+  })
+})

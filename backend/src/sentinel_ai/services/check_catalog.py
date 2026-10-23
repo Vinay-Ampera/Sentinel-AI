@@ -420,15 +420,19 @@ CATALOG: dict[str, CheckSpec] = {
             "Dependency vulnerability audit",
             "security",
             "dependency_audit",
-            "medium",
+            "low",
             CODE,
             _ALL,
-            "Compares locked dependency versions with an advisory database; needs outbound access to the advisory feed.",
-            ("Lockfile present", "Egress allow-list entry for the advisory feed"),
+            "Compares locked dependency versions with advisory data baked into the sandbox image "
+            "(offline; the data's age is shown and stale data blocks the check). Reachability of "
+            "the vulnerable code is not assessed.",
+            (
+                "Lockfile present (poetry.lock, requirements.txt, Pipfile.lock, package-lock.json)",
+                "Advisory data in the sandbox image (make advisories)",
+            ),
             ("audit report", "advisory identifiers"),
             ("dependency", "dependencies", "audit", "cve", "supply", "vulnerab"),
             _eval_dependency_audit,
-            needs_egress=True,
         ),
         CheckSpec(
             "http_smoke",

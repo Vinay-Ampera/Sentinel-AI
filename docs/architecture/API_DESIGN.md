@@ -111,11 +111,13 @@ All errors:
 ### Findings
 | Method & path | Purpose | Level |
 |---|---|---|
-| `GET /projects/{id}/findings` `?severity&status&verification_state` | List | read |
-| `GET /findings/{id}` | Detail incl. evidence list and events | read |
-| `PATCH /findings/{id}` `{status?,assigned_to?}` | Triage; `accepted_risk`/`false_positive` need Admin+ | run (A S for risk acceptance) |
-| `POST /findings/{id}/evidence` `{artifact_id,note}` | Attach evidence | run |
-| `POST /findings/{id}/verification` `{state}` | Set verification state; `confirmed` rejected (`409`) without evidence | run |
+| `GET /projects/{id}/findings` `?severity&status` | List, most severe first (**built, Stage 10**). `verification_state` filter not built | read |
+| `GET /projects/{id}/finding-groups` `?limit` | Findings that several scanners/advisories report for the same issue, each member with its own tool, severity and status (**built**, ADR-0008). Groups link; they never merge findings | read |
+| `GET /findings/{id}` | Detail: fields (incl. `cwe`, `component`, `aliases`, `group_id`), `confidence`, `limitations`, `events`, linked `evidence`, `attempts`, `related` (other members of its group) (**built**) | read |
+| `POST /findings/{id}/status` `{status,note?}` | Review state along an explicit transition map (**built**; replaces the designed `PATCH`). `verified_fixed` and automatic `reopened` come only from scans. `false_positive` / `accepted_risk` need the risk-decision permission (Admin+) and a note of at least 10 characters. Refusals are audited | run (A S for risk decisions) |
+| `PATCH /findings/{id}` `{assigned_to?}` | Assignment (**not built**, Q77) | run |
+| `POST /findings/{id}/evidence` `{artifact_id,note}` | Attach evidence (**not built**, Q77; scan reports are linked automatically) | run |
+| `POST /findings/{id}/verification` `{state,note}` | A person's judgement: `likely`, `confirmed`, `not_reproduced`, `inconclusive`, with a note (**built**). `confirmed` is rejected (`409 evidence_required`, audited) without an evidence row; the database refuses it too. A scan never sets any of these | run |
 | `POST /findings/{id}/regression-tests` / `POST /regression-tests/{id}/decision` | Propose/accept regression test (accept = plan edit, subject to approval) | run |
 | `POST /findings/{id}/verify-fix` → `202` | Verification run | run |
 

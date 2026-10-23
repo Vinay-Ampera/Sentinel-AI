@@ -26,12 +26,15 @@ from sentinel_ai.execution.interface import (
     EvidenceItem,
     ExecutionRequest,
     Executor,
+    ScanOutcome,
+    TargetRef,
     WorkspaceRef,
 )
 from sentinel_ai.repositories import identity, plans, projects, runs
 from sentinel_ai.repositories.plans import PlannedTestRecord
 from sentinel_ai.repositories.runs import BatchRecord, RunRecord
 from sentinel_ai.services import audit, authorizations, job_state
+from sentinel_ai.services import findings as findings_service
 from sentinel_ai.services import plans as plans_service
 from sentinel_ai.services import policy as policy_service
 from sentinel_ai.services import project_access as project_access_service
@@ -236,6 +239,7 @@ def _run_batch(
                 continue
         with factory() as db:
             workspace = _workspace(db, run, test)  # project-scoped, hash-recorded source only
+            target = _target(db, run, test)  # project-scoped remote source, or None
         outcome = executor.execute(
             ExecutionRequest(
                 run_id=run.id,
@@ -247,6 +251,7 @@ def _run_batch(
                 project_id=run.project_id,
                 workspace=workspace,
                 parameters=dict(test.definition.get("parameters") or {}),
+                target=target,
             ),
             should_stop,
         )
@@ -267,8 +272,11 @@ def _run_batch(
             db.commit()
         if result_id is not None and outcome.cases:
             _store_cases(factory, run, result_id, outcome.cases)
+        stored: dict[str, uuid.UUID] = {}
         if result_id is not None and outcome.evidence:
-            _store_evidence(factory, settings, run, result_id, outcome.evidence)
+            stored = _store_evidence(factory, settings, run, result_id, outcome.evidence)
+        if result_id is not None and outcome.scan is not None:
+            _store_findings(factory, run, test, result_id, outcome.scan, stored)
         if status == "failed_to_start":
             state["stop"] = "failed_to_start"
             break
@@ -309,6 +317,29 @@ def _workspace(db: Session, run: RunRecord, test: PlannedTestRecord) -> Workspac
     return WorkspaceRef(artifact.storage_key, artifact.sha256, artifact.size_bytes)
 
 
+def _target(db: Session, run: RunRecord, test: PlannedTestRecord) -> TargetRef | None:
+    """The test's authorized remote development/staging URL, only if it is an active remote
+    source of the run's own project. The target gate already passed in ``revalidate``; the
+    executor validates the URL again and ZAP additionally pins the resolved address."""
+    target = test.definition.get("target")
+    if not isinstance(target, dict):
+        return None
+    try:
+        source_id = uuid.UUID(str(target.get("source_id")))
+    except ValueError:
+        return None
+    source = next((s for s in projects.list_sources(db, run.project_id) if s.id == source_id), None)
+    if (
+        source is None
+        or not source.is_active
+        or source.source_type != "remote_url"
+        or not source.target_url
+        or source.environment not in ("development", "staging")
+    ):
+        return None
+    return TargetRef(url=source.target_url, environment=source.environment, source_id=source.id)
+
+
 def _store_cases(
     factory: sessionmaker[Session],
     run: RunRecord,
@@ -330,11 +361,13 @@ def _store_evidence(
     run: RunRecord,
     result_id: uuid.UUID,
     items: tuple[EvidenceItem, ...],
-) -> None:
-    """Write evidence under server-chosen keys and record it. A failure here never loses the
-    result that was already committed; it is logged without content."""
+) -> dict[str, uuid.UUID]:
+    """Write evidence under server-chosen keys and record it; returns the artifact id per file
+    name. A failure here never loses the result that was already committed; it is logged
+    without content."""
     store = ArtifactStore(settings.artifact_root())
     limit = settings.sandbox_output_cap_bytes + 4096
+    ids: dict[str, uuid.UUID] = {}
     try:
         with factory() as db:
             for item in items:
@@ -343,15 +376,51 @@ def _store_evidence(
                 data = item.data[:limit]
                 key = f"projects/{run.project_id}/runs/{run.id}/results/{result_id}/{item.name}"
                 store.put_bytes(key, data)
-                runs.insert_evidence_artifact(
+                ids[item.name] = runs.insert_evidence_artifact(
                     db, project_id=run.project_id, run_id=run.id, result_id=result_id,
                     kind=item.kind, storage_key=key, sha256=sha256_bytes(data),
                     size_bytes=len(data), content_type=item.content_type, filename=item.name,
                 )  # fmt: skip
             db.commit()
     except Exception as exc:
+        ids = {}
         logger.error(
             "evidence for result %s could not be stored (%s)", result_id, type(exc).__name__
+        )
+    return ids
+
+
+def _store_findings(
+    factory: sessionmaker[Session],
+    run: RunRecord,
+    test: PlannedTestRecord,
+    result_id: uuid.UUID,
+    scan: ScanOutcome,
+    stored: dict[str, uuid.UUID],
+) -> None:
+    """Record scanner findings, each linked to the stored scan report. The committed result
+    is never lost if this fails; the failure is logged without content."""
+    target = test.definition.get("target")
+    try:
+        source_id = uuid.UUID(str(target.get("source_id"))) if isinstance(target, dict) else None
+    except ValueError:
+        source_id = None
+    report = stored.get(f"{scan.tool}.json")
+    try:
+        with factory() as db:
+            # Never trust a source id the plan did not scope to this project.
+            if source_id is not None and not any(
+                s.id == source_id for s in projects.list_sources(db, run.project_id)
+            ):
+                source_id = None
+            findings_service.ingest_scan(
+                db, project_id=run.project_id, run_id=run.id, result_id=result_id,
+                source_id=source_id, scan=scan, report_artifact_id=report,
+            )  # fmt: skip
+            db.commit()
+    except Exception as exc:
+        logger.error(
+            "findings for result %s could not be stored (%s)", result_id, type(exc).__name__
         )
 
 

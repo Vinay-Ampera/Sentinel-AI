@@ -5,7 +5,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sentinel_ai.api import admin, auth, break_glass, governance, health, plans, projects, runs
+from sentinel_ai.api import (
+    admin,
+    auth,
+    break_glass,
+    findings,
+    governance,
+    health,
+    plans,
+    projects,
+    runs,
+)
 from sentinel_ai.core.config import Settings, get_settings
 from sentinel_ai.core.errors import install_error_handlers
 from sentinel_ai.core.logging import configure_logging
@@ -83,4 +93,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(governance.router, prefix="/api/v1")
     app.include_router(break_glass.router, prefix="/api/v1")
     app.include_router(runs.router, prefix="/api/v1")
+    app.include_router(findings.router, prefix="/api/v1")
     return app

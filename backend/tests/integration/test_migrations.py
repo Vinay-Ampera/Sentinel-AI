@@ -27,6 +27,7 @@ EXPECTED_PUBLIC = {
     "job_events", "findings", "finding_events", "finding_evidence",
     "verification_attempts", "regression_tests", "llm_usage", "policies",
     "audit_events", "state_transitions", "test_batch_items", "test_case_results",
+    "finding_groups",
 }  # fmt: skip
 EXPECTED_APP_USER = {"roles", "users", "sessions", "password_reset_tokens"}
 
@@ -406,6 +407,55 @@ def test_downgrading_0006_keeps_results_and_maps_not_run(conn: psycopg.Connectio
             conn.execute(
                 "UPDATE public.test_results SET status = 'not_run' WHERE id = %s", (result,)
             )
+    finally:
+        _alembic("upgrade", "head")
+        conn.execute("TRUNCATE app_user.users, public.projects CASCADE")
+
+
+def _finding(conn: psycopg.Connection, seed: _Seed, fp: str) -> object:
+    return conn.execute(
+        "INSERT INTO public.findings (project_id, fingerprint, title, category, detected_by, "
+        "severity) VALUES (%s, %s, 't', 'static_analysis', 'bandit', 'high') RETURNING id",
+        (seed.project, fp),
+    ).fetchone()[0]  # type: ignore[index]
+
+
+def test_finding_columns_and_event_types_from_0007(conn: psycopg.Connection, seed: _Seed) -> None:
+    """Migration 0007: confidence is bounded, defaults are conservative, new event types exist."""
+    fid = _finding(conn, seed, "fp-defaults-0007")
+    row = conn.execute(
+        "SELECT confidence, verification_state, status, occurrences, source_id FROM public.findings WHERE id = %s",
+        (fid,),
+    ).fetchone()
+    assert row == ("low", "unverified", "new", 1, None)  # a finding starts unverified and new
+    _expect(conn, errors.CheckViolation, "UPDATE public.findings SET confidence = 'certain' WHERE id = %s", (fid,))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.findings SET line_number = 0 WHERE id = %s", (fid,))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.findings SET occurrences = 0 WHERE id = %s", (fid,))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.findings SET limitations = repeat('x', 2001) WHERE id = %s", (fid,))  # fmt: skip
+    _expect(conn, errors.ForeignKeyViolation, "UPDATE public.findings SET source_id = gen_random_uuid() WHERE id = %s", (fid,))  # fmt: skip
+    event = "INSERT INTO public.finding_events (finding_id, event_type) VALUES (%s, %s)"
+    conn.execute(event, (fid, "verification_attempt"))
+    conn.execute(event, (fid, "reopened"))
+    _expect(conn, errors.CheckViolation, event, (fid, "deleted"))
+    _expect(conn, errors.CheckViolation, "UPDATE public.finding_events SET to_value = 'x' WHERE finding_id = %s", (fid,))  # fmt: skip
+
+
+def test_downgrading_0007_keeps_findings(conn: psycopg.Connection) -> None:
+    _alembic("upgrade", "head")
+    conn.autocommit = False
+    try:
+        seed = _Seed(conn)
+        fid = _finding(conn, seed, "fp-downgrade-0007")
+        conn.execute("INSERT INTO public.finding_events (finding_id, event_type) VALUES (%s, 'reopened')", (fid,))  # fmt: skip
+        conn.commit()
+    finally:
+        conn.autocommit = True
+    try:
+        _alembic("downgrade", "0006_test_cases")
+        assert conn.execute("SELECT count(*) FROM public.findings WHERE id = %s", (fid,)).fetchone() == (1,)  # fmt: skip
+        cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'findings'").fetchall()}  # fmt: skip
+        assert not cols & {"confidence", "rule_id", "limitations", "occurrences", "source_id"}
+        assert conn.execute("SELECT count(*) FROM public.finding_events WHERE event_type = 'reopened'").fetchone() == (0,)  # fmt: skip
     finally:
         _alembic("upgrade", "head")
         conn.execute("TRUNCATE app_user.users, public.projects CASCADE")

@@ -29,6 +29,15 @@ class WorkspaceRef:
 
 
 @dataclass(frozen=True)
+class TargetRef:
+    """The registered URL of an authorized remote development/staging source."""
+
+    url: str
+    environment: str  # development | staging
+    source_id: uuid.UUID
+
+
+@dataclass(frozen=True)
 class ExecutionRequest:
     run_id: uuid.UUID
     batch_id: uuid.UUID
@@ -41,6 +50,9 @@ class ExecutionRequest:
     # Plan-time parameters (already validated and frozen with the approved plan). The
     # executor validates them again before use.
     parameters: dict[str, Any] = field(default_factory=dict)
+    # A network target (Stage 10, ZAP only): resolved by the worker from a project source that
+    # passed the authorization gate. The executor re-validates it before any container starts.
+    target: "TargetRef | None" = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +81,38 @@ class CaseResult:
 
 
 @dataclass(frozen=True)
+class FindingResult:
+    """One normalized scanner finding (Stage 10). Text is untrusted: redacted, control
+    characters removed, clipped and free of code snippets before it gets here."""
+
+    tool: str  # bandit | semgrep | dependency_audit | zap
+    rule_id: str
+    title: str
+    severity: str  # info | low | medium | high | critical
+    confidence: str  # low | medium | high
+    path: str
+    line: int | None
+    message: str
+    fingerprint: str
+    cwe: int | None = None
+    category: str = "static_analysis"  # static_analysis | dependency | dynamic
+    component: str | None = None  # "pypi:name@1.2", "GET https://host/path"
+    aliases: tuple[str, ...] = ()  # advisory / CVE ids that name the same issue
+
+
+@dataclass(frozen=True)
+class ScanOutcome:
+    """A scanner run that produced a valid report. ``findings`` may be empty (clean scan).
+    Absent when the scan did not complete, so a failed scan never reads as "all fixed"."""
+
+    tool: str
+    findings: tuple[FindingResult, ...]
+    complete: bool  # False when the report was truncated or the tool reported errors
+    limitations: str
+    lines_scanned: int | None = None
+
+
+@dataclass(frozen=True)
 class ExecutionOutcome:
     status: str
     summary: str
@@ -76,6 +120,7 @@ class ExecutionOutcome:
     duration_ms: int | None = None
     evidence: tuple[EvidenceItem, ...] = ()
     cases: tuple[CaseResult, ...] = ()
+    scan: ScanOutcome | None = None
 
 
 class Executor(Protocol):

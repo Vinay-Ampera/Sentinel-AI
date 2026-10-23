@@ -110,7 +110,7 @@ def test_smoke_check_runs_in_a_real_sandbox_and_stores_evidence(denv: tuple[Env,
 
 def test_checks_without_a_runner_are_skipped_and_never_start_a_container(denv: tuple[Env, DockerRunner]) -> None:  # fmt: skip
     e, runner = denv
-    s, pid, plan, _ = smoke_plan(e, ["semgrep_static"])
+    s, pid, plan, _ = smoke_plan(e, ["js_unit"])
     run_id = start(s, pid, plan).json()["id"]
     deliver(e, executor_for(e))
     assert sorted(result_statuses(e, run_id)) == ["passed", "skipped"]

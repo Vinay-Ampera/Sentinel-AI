@@ -50,6 +50,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 PROJECT = {
+    "openapi.yaml": "openapi: 3.0.0\n",  # makes openapi_lint plannable: a check that has no runner
     "calc.py": "def add(a, b):\n    return a + b\n",
     "tests/test_calc.py": (
         "import calc, pytest\n"
@@ -112,7 +113,7 @@ def results(s: Session, run_id: str) -> list[dict]:
 
 def test_run_a_pytest_plan_and_inspect_every_result_state_and_evidence(denv: Callable[..., tuple[Env, DockerRunner]]) -> None:  # fmt: skip
     e, runner = denv()
-    s, pid, plan = project(e, PROJECT, [{"check_id": "pytest_unit"}, {"check_id": "sandbox_smoke"}, {"check_id": "semgrep_static"}])  # fmt: skip
+    s, pid, plan = project(e, PROJECT, [{"check_id": "pytest_unit"}, {"check_id": "sandbox_smoke"}, {"check_id": "openapi_lint"}])  # fmt: skip
     run_id = start(s, pid, plan).json()["id"]
     assert worker(e) == ["completed"] and run_status(e, run_id) == "completed"
 
@@ -122,7 +123,7 @@ def test_run_a_pytest_plan_and_inspect_every_result_state_and_evidence(denv: Cal
         "failed",
         "passed",
         "skipped",
-    ]  # pytest failed, smoke passed, semgrep has no runner
+    ]  # pytest failed, smoke passed, openapi_lint has no runner
     failed = next(r for r in by_tool.values() if r["status"] == "failed")
     assert failed["summary"] == "pytest: 1 passed, 1 failed, 1 skipped."
 
@@ -199,7 +200,7 @@ def test_state_vocabulary_distinguishes_blocked_timed_out_not_run_and_failed_to_
     # not_run: cancelled before the second batch started.
     e4, _ = denv(job_batch_size=1, job_max_concurrent_batches_per_run=1)
     s4, pid4, plan4 = project(
-        e4, PROJECT, [{"check_id": "sandbox_smoke"}, {"check_id": "semgrep_static"}]
+        e4, PROJECT, [{"check_id": "sandbox_smoke"}, {"check_id": "openapi_lint"}]
     )
     run4 = start(s4, pid4, plan4).json()["id"]
     ((b1, t1),) = rec(e4).sent

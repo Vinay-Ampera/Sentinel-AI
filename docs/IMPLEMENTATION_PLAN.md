@@ -712,8 +712,8 @@ This section lists only each stage's status, next action, requirements and accep
 - Run ownership and artifact authorization are enforced.
 
 ### Stage 10 — Security integrations and finding verification
-**Status:** Pending  
-**Next action:** Starts after Stage 9.
+**Status:** Completed (Bandit and the dependency audit verified; Semgrep and ZAP integrated but NOT verified against the real tools: Q73, Q75)  
+**Next action:** Owner review and commit; `make -C backend advisories` (connected machine), `make -C backend sandbox-image`; apply migrations 0003-0008 to the real database after review. Before relying on Semgrep: `make -C backend scanner-image SEMGREP_VERSION=<pin>`, `semgrep --validate --config sandbox/semgrep-rules`, one real scan. Before enabling ZAP: the network and verification checklists in SANDBOX_THREAT_MODEL.md. Stage 11 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-24 Stage 10; 2026-10-23 Stage 10 completion), ADR-0007, ADR-0008.
 
 **Work**
 - Integrate static checks such as Semgrep and Bandit.
@@ -731,7 +731,7 @@ This section lists only each stage's status, next action, requirements and accep
 
 ### Stage 11 — LangGraph workflows and selective Gemini use
 **Status:** Pending  
-**Next action:** Starts after Stage 10.
+**Next action:** Starts after Stage 10 (owner approval needed).
 
 **Work**
 - Implement analysis, planning, investigation, regression-test proposal, and verification graph workflows where justified.
