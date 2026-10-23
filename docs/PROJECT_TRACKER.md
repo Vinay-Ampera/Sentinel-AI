@@ -16,7 +16,7 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 5 | Project intake and deterministic analysis | Completed | ZIP upload + static analysis done; Git/localhost/remote registered, not analysed (Q36) |
 | 6 | Test plans and approval policies | Completed | Section 7 (2026-10-22 Stage 6 entry); migration 0003 not yet applied to the real DB |
 | 7 | Job queue, batches, cancellation, recovery | Completed | Section 7 (2026-10-23 Stage 7 entry); migrations 0003-0005 not yet applied to the real DB; uncommitted |
-| 8 | Sandboxed execution foundation | Pending | Not started |
+| 8 | Sandboxed execution foundation | Completed | Section 7 (2026-10-23 Stage 8 entry); uncommitted; no migration |
 | 9 | First QA execution path | Pending | Not started |
 | 10 | Security integrations and finding verification | Pending | Not started |
 | 11 | LangGraph workflows and selective Gemini | Pending | Not started |
@@ -28,20 +28,21 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 
 Owner review/commit state: Stages 0-5 are committed and pushed (owner report, 2026-10-22). Stage 6 is implemented but **uncommitted**.
 
-## 2. Latest verified results (Stage 7 completion, 2026-10-23)
+## 2. Latest verified results (Stage 8 completion, 2026-10-23)
 
-Disposable PostgreSQL 17 (private cluster, port 55432) and a throw-away `redis:7-alpine` container (127.0.0.1:56379, no persistence) only; nothing was run against the live `sentinel-ai` database, your dev Redis, a live API server or a browser. `backend/.env` was not read.
+Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-alpine` container (127.0.0.1:56379) and the local Docker daemon (sandbox containers only, each test under its own scope label and removed afterwards). Nothing was run against the live `sentinel-ai` database, your dev Redis container, a live API server or a browser; `backend/.env` was not read. After the runs the daemon held 0 sandbox containers.
 
-| Check | Result |
+| Configuration | Result |
 |---|---|
-| pytest with disposable DB + Redis | 288 passed (1 upstream httpx/starlette warning) |
-| pytest with DB, without Redis | 286 passed, 2 skipped (the real-broker tests skip by design) |
-| pytest without DB or Redis | 154 passed, 134 skipped |
-| `ruff check` / `ruff format --check` | clean (95 files) |
-| `mypy` | clean (65 source files) |
-| Real broker | `test_celery_broker.py`: a batch published through Redis was consumed by a real Celery worker; a live worker process was SIGKILLed mid-batch and the batch was recovered and finished by a second worker |
-| Worker/beat entry points | `celery -A sentinel_ai.jobs.worker worker` started as its own process (3 tasks registered, startup reconcile ran); `beat` sent reconcile/dispatch on schedule |
-| Database changes in Stage 7 | one additive migration, `0005_job_queue` (up/down round trip tested on the disposable DB; **not applied to the real DB**, nor are 0003/0004) |
+| A: DB + Redis + Docker | 369 passed (1 upstream httpx/starlette warning) |
+| B: DB + Docker, no Redis | 366 passed, 3 skipped (real-broker tests) |
+| C: no DB, no Redis, Docker present | 225 passed, 144 skipped |
+| D: DB, no Redis, no Docker daemon | 327 passed, 42 skipped (Docker tests skip by design) |
+| E: nothing available | 195 passed, 174 skipped |
+| `ruff check` / `ruff format --check` | clean (104 files) |
+| `mypy` | clean (71 source files) |
+| Stage 8 tests | unit 41 (`test_sandbox.py`); Docker 30 (`test_sandbox_docker.py`); end-to-end 9 (`test_sandbox_e2e.py`); real worker process + Redis + Docker 1 (in `test_celery_broker.py`) |
+| Database changes in Stage 8 | none (head is still `0005_job_queue`; 0003-0005 are not applied to the real DB) |
 | Frontend | no frontend change; checks not re-run |
 
 ## 3. Decisions and scope (pointers and summaries)
@@ -61,9 +62,9 @@ Disposable PostgreSQL 17 (private cluster, port 55432) and a throw-away `redis:7
 
 ## 4. Remaining work and known issues
 
-- Stage 7 is implemented and **uncommitted**; Stage 8 (sandbox) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
+- Stages 7 and 8 are implemented and **uncommitted**; Stage 9 (first QA execution path) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
 - Owner actions for Stages 6-7: review and commit; apply migrations 0003, 0004 and 0005 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0005_job_queue --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
-- Execution is still a stub: runs record every test as `skipped` ("Not executed ... Stage 8"). No target code runs until Stage 8. No new environment variables were added, so `.env`/`.env.example` need no change.
+- Execution: `JOB_EXECUTOR=stub` is still the default (every test `skipped`, "Not executed"). `JOB_EXECUTOR=docker` is an explicit opt-in that runs only the fixed `sandbox_smoke` command in network-less containers; no project code runs until Stage 9. Build the image first: `make -C backend sandbox-image`. Stage 8 follow-ups: Q58-Q64. No new environment variables were added, so `.env`/`.env.example` need no change.
 - Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
 - Asynchronous analysis stays synchronous (Q37 deferred again, Q52); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
 - Redis: Compose config verified and a Redis container was exercised in tests (Q32); your dev Redis was not touched. Readiness still does not require Redis (Q31).
@@ -366,4 +367,20 @@ NOT run: real database, your dev Redis, a live API server, browser, frontend che
 Acceptance criteria: queued jobs cancellable (tested); running jobs request termination through the executor interface and report the outcome (tested with the stub/Probe executors; a real sandbox arrives in Stage 8); completed batches survive later cancellation (tested); duplicate delivery does not duplicate work (tested, incl. concurrent threads); stuck jobs reconciled and visible via job_events (tested); worker restart behavior tested (simulated kill + real SIGKILL) and documented (JOB_AND_SANDBOX_DESIGN, ADR-0004).
 Known issues: Q52-Q57 in OPEN_QUESTIONS.md.
 Next action: owner review and commit; apply migrations 0003-0005 to the real database; Stage 8 on approval.
+```
+
+```text
+Date: 2026-10-23
+Stage: 8 (sandboxed execution foundation)
+Status: DONE pending owner review (all acceptance criteria met with recorded evidence; no project code is executed yet, by design).
+Design: threat model and plan approved by the owner before coding; five decisions approved (hardened Docker baseline, sandbox_smoke check, network always off, stdout/stderr/manifest evidence, Docker integration tests). ADR-0005, docs/architecture/SANDBOX_THREAT_MODEL.md.
+Implemented: sandbox/{Dockerfile,entry.py,smoke.py} (trusted in-image runner: bounded stdin archive, strict extraction, own timeout; image built locally from python:3.12-slim with no pull); execution/{sandbox_spec,docker_runner,docker_executor,commands,evidence,factory}.py; interface additions (WorkspaceRef, EvidenceItem, `blocked` outcome); worker resolves a project-scoped, hash-recorded workspace, stores evidence artifacts (artifact_store.put_bytes, repositories insert_evidence_artifact) and re-checks lease ownership after each execution; reconciler takes cleanup/sweep hooks (lost, overrunning and unconfirmed-cancel batches; janitor); catalog check sandbox_smoke (low risk, developer-selectable, `automatic=False`, excluded from automatic and prompt plans); settings JOB_EXECUTOR=docker and SANDBOX_* (image, runtime, scope, cpus 1, memory 512 MiB, pids 128, workspace 128 MiB, tmp 16 MiB, extract 96 MiB, file 32 MiB, timeout 300 s, output cap 1 MiB); `make sandbox-image`.
+Behavior: --network none always; read-only rootfs; cap-drop ALL; no-new-privileges; user 65534; no mounts/devices/socket/env; ZIP over stdin; fixed command table; status from docker inspect; evidence redacted/capped/hashed; cleanup by label and scope on success, failure, timeout, cancel, OOM, worker loss.
+Tests: see section 2. Docker tests prove, in real containers: no host secrets in the environment, every network route blocked (host loopback, bridge gateway, internet, metadata, DNS), no Docker socket or host paths, read-only rootfs and noexec tmpfs, uid 65534 with zero capabilities, seccomp and no-new-privileges, memory/pids/tmpfs-size/file-size/output limits, timeout, frozen-runner host deadline, cancel, removal after every outcome, orphan cleanup by batch, scope-limited janitor, six hostile archive kinds rejected, and project code never executed.
+Commands actually run: docker build (local base, no pull); docker create/start/inspect/rm for the tests; private PostgreSQL 17 cluster and a throw-away Redis container for tests only; pytest in five configurations (section 2); ruff check/format; mypy; alembic heads; real Celery worker process smoke runs.
+Observations: three first-run test failures were wrong assumptions in my tests (OOM exit code 247 not 137; killing the in-container runner ends the container; a "large" ZIP compressed below the limit), fixed in the tests. One product fix came from review: a worker whose batch the reconciler already took no longer records a late result.
+NOT run: the real database, your dev Redis, a live API server, a browser, frontend checks (no frontend change), gVisor/Kata runtimes (none installed; SANDBOX_RUNTIME is validated and passed through but untested), rootless Docker, load/soak tests, any real project code (Stage 9).
+Acceptance criteria: a sample command runs only inside the sandbox (tests + end to end; the host never executes it); the sandbox cannot read backend secrets or unrelated workspaces (env, mounts, per-container tmpfs, project-scoped source lookup, hash check); CPU/memory/process/time/filesystem/network limits are enforced as configured (asserted from the daemon's HostConfig and by behavior); containers and workspaces are cleaned after success, failure, timeout, cancellation, OOM and worker loss; risky or unauthorized targets are blocked before execution (network checks and unverified or foreign archives are `blocked`, unknown checks `skipped`, Stage 7 revalidation unchanged).
+Known issues: Q58-Q64 in OPEN_QUESTIONS.md.
+Next action: owner review and commit; build the image; apply migrations 0003-0005 to the real database; Stage 9 on approval.
 ```

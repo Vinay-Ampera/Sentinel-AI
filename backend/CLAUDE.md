@@ -40,3 +40,10 @@ Code lives in `src/sentinel_ai/`: `api/` (routes, thin) → `services/` (applica
 - Executors implement `execution.interface.Executor`, poll `should_stop`, and never report a result they did not produce (the stub reports `skipped`). Cancellation never relies on Redis revocation.
 - Retries are bounded and only for infrastructure failures; never auto-retry a test that already produced a result.
 
+## Sandbox rules (Stage 8)
+- Target-related execution happens only through `execution/docker_executor.py` and `docker_runner.py`. Never run a command, import, or extract an archive on the host; never add a bind mount, volume, device, Docker socket, `--privileged`, network, or environment pass-through to `execution/sandbox_spec.create_argv` (tests assert their absence).
+- Commands come only from the fixed table `execution/commands.py` keyed by catalog check id; nothing from a request, plan parameter, prompt or sandbox output may reach a Docker argument. New runners need a threat-model update and Docker tests.
+- Status comes from `docker inspect` and host timers, never from sandbox output. Output is untrusted: redact, cap, store under fixed names (`execution/evidence.py`).
+- Every container carries `sentinel.sandbox=1` and the deployment scope label; cleanup/sweep filters on both. Always remove in `finally`.
+- `JOB_EXECUTOR=stub` stays the default. Docker tests must use a unique scope and clean up only that scope.
+

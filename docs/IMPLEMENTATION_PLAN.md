@@ -675,8 +675,8 @@ This section lists only each stage's status, next action, requirements and accep
 - Worker restart behavior is tested and documented.
 
 ### Stage 8 — Sandboxed execution foundation
-**Status:** Pending  
-**Next action:** Starts after Stage 7; sandbox threat model first (Q6).
+**Status:** Completed  
+**Next action:** Owner review and commit; build the runner image (`make -C backend sandbox-image`); apply migrations 0003-0005 to the real database after review (Stage 8 adds none). Enable only deliberately with `JOB_EXECUTOR=docker`. Stage 9 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-23, Stage 8) and `docs/architecture/SANDBOX_THREAT_MODEL.md`.
 
 **Work**
 - Create a dedicated sandbox executor interface.

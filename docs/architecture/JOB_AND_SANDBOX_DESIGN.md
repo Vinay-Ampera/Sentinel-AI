@@ -71,5 +71,11 @@ Docker is not a complete boundary against hostile code. Evaluate rootless Docker
 - **Restart behavior:** after a worker restart its unacknowledged message may be redelivered later; it is harmless (the batch was re-dispatched with a new id). Recovery never depends on the broker. The first lease must expire (60 s by default) before a lost batch is re-queued. Sandbox cleanup of a lost worker is Stage 8 (Q55).
 - **Events/audit:** every transition writes `job_events`; `run.create`, `run.cancel`, `run.start`, `run.finish` (and refused starts) write `audit_events`.
 
-## Remaining TODO (Stage 8)
-Threat model, real executor and sandbox cleanup by label, artifact flow detail, residual risks.
+## Sandbox executor (implemented in Stage 8; ADR-0005, SANDBOX_THREAT_MODEL.md)
+- `JOB_EXECUTOR=docker` swaps the stub for `DockerSandboxExecutor`. Per planned test: fixed command by check id (`execution/commands.py`; only `sandbox_smoke` today, others `skipped`), network checks `blocked`, the worker supplies a project-scoped `WorkspaceRef`, the executor re-reads the archive once, checks its SHA-256 and headers, and streams exactly those bytes to a locked-down container over stdin.
+- Result mapping (from `docker inspect` and host timers only): exit 0 `passed`; other exit `failed`; 70 archive refused `error`; OOM `error`; timeout `timed_out`; cancel `cancelled`; create/start failure `failed_to_start` (retryable by Stage 7 rules).
+- Evidence per test: `stdout.log`, `stderr.log` (`log`), `manifest.json` (`report`: limits, image id, container configuration as the daemon reports it, exit state, durations). Stored under `projects/{project}/runs/{run}/results/{result}/` with SHA-256 in `artifacts`.
+- Cancel/timeout: `should_stop` is polled every 0.5 s (also renews the lease); the container is killed and removed; a host deadline (timeout + 5 s) covers a frozen in-container runner. Lost or stuck workers: the reconciler calls `terminate(batch)` and the janitor sweeps leaked containers by age within the deployment scope.
+
+## Remaining TODO (Stage 9+)
+Real test runners and result-file collection, allow-listed egress / dependency path, localhost target reach (Q26), artifact download and authorization, stronger runtime for project code (Q59).

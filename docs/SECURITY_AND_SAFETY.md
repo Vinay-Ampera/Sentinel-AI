@@ -1,6 +1,6 @@
 # Security and Safety
 
-> Status: **Stage 6 implemented** (plan approval policy, target authorization, production block; see "Plans, approvals and target gating"). **Stage 4 implemented** for authentication, sessions, CSRF, lockout, the role matrix and user administration (ADR-0002, Accepted). Project-scoped and approval rules are enforced by `require_project_access` and `core/permissions.py` as those routes are built. The sandbox threat model is still required before untrusted code runs (Q6, Stage 8).
+> Status: **Stage 6 implemented** (plan approval policy, target authorization, production block; see "Plans, approvals and target gating"). **Stage 4 implemented** for authentication, sessions, CSRF, lockout, the role matrix and user administration (ADR-0002, Accepted). Project-scoped and approval rules are enforced by `require_project_access` and `core/permissions.py` as those routes are built. **Stage 8 implemented** the Docker sandbox (ADR-0005, `architecture/SANDBOX_THREAT_MODEL.md`); executing genuinely untrusted project code in production additionally needs a stronger runtime (Q59).
 
 ## Roles and permission matrix
 Roles live in `app_user.roles` (one role per user). Project access is separate and per-project (`read` < `run` < `manage`) via ownership, `project_memberships`, or team access. **Role grants capabilities; project access grants scope. Both must allow an action.**
@@ -73,7 +73,10 @@ Artifact bytes live outside Postgres via the store interface (non-guessable keys
 ## Audit
 `audit_events` (append-only, DB-enforced) records: login success/failure/lockout, logout, password/role/policy changes, user creation/deactivation, project membership changes, source and authorization requests/decisions, approvals, run start/cancel/rerun, artifact download, permission denials, LLM budget blocks. Fields: actor, action, target, project, outcome, request ID, IP, redacted detail.
 
-## Threat considerations (initial; full model before Stage 8)
+## Sandbox (Stage 8)
+Target-adjacent work runs only in disposable Docker containers started by the worker: no network, read-only root filesystem, no capabilities, non-root user, CPU/memory/process/disk/time limits, no mounts, devices, Docker socket or environment, source archive over stdin, fixed command table, status taken from the daemon not from output, evidence redacted and hashed, removal by label on every path. `JOB_EXECUTOR=stub` stays the default; `docker` is an operator opt-in. Full model, controls, tests and residual risks: `architecture/SANDBOX_THREAT_MODEL.md`.
+
+## Threat considerations (initial list; the sandbox now has its own model)
 Prompt injection from repo/ZIP/web content (treated as data; no tool authority from model text) · malicious ZIP (traversal, symlink, bomb) · hostile project code escaping the sandbox (isolation level TBD) · SSRF via URL sources (loopback-only for localhost, allow-listed hosts for remote, block metadata/internal ranges) · credential theft via logs/artifacts (redaction, no secrets in sandbox) · privilege escalation via role/membership edits (Super Admin-only for Admin grants, last-admin guard, audited) · cross-project data access (project-scoped queries + mandatory tests) · session theft/CSRF (cookie flags, CSRF token, short idle timeout) · LLM cost abuse (budgets, rate limits).
 
 ## Rules (unchanged)

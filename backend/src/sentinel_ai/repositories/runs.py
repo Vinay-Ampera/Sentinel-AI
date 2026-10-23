@@ -478,14 +478,14 @@ def insert_result(
     summary: str | None,
     exit_code: int | None = None,
     duration_ms: int | None = None,
-) -> bool:
-    """Idempotent on (batch, test, attempt): a duplicate delivery inserts nothing."""
-    result = db.execute(
+) -> uuid.UUID | None:
+    """Idempotent on (batch, test, attempt): a duplicate delivery inserts nothing (None)."""
+    row = db.execute(
         text(
             "INSERT INTO public.test_results (run_id, batch_id, planned_test_id, attempt, status, "
             "summary, exit_code, duration_ms, started_at, finished_at) VALUES "
             "(:r, :b, :t, :a, :s, :sum, :ec, :d, now(), now()) "
-            "ON CONFLICT ON CONSTRAINT test_results_attempt_unique DO NOTHING"
+            "ON CONFLICT ON CONSTRAINT test_results_attempt_unique DO NOTHING RETURNING id"
         ),
         {
             "r": run_id,
@@ -497,8 +497,46 @@ def insert_result(
             "ec": exit_code,
             "d": duration_ms,
         },
-    )
-    return result.rowcount == 1  # type: ignore[attr-defined, no-any-return]
+    ).first()
+    return uuid.UUID(str(row[0])) if row else None
+
+
+def insert_evidence_artifact(
+    db: Session,
+    *,
+    project_id: uuid.UUID,
+    run_id: uuid.UUID,
+    result_id: uuid.UUID,
+    kind: str,
+    storage_key: str,
+    sha256: str,
+    size_bytes: int,
+    content_type: str,
+    filename: str,
+) -> uuid.UUID:
+    """Metadata for evidence bytes already written to the artifact store."""
+    row = db.execute(
+        text(
+            "INSERT INTO public.artifacts (project_id, run_id, result_id, kind, storage_key, "
+            "sha256, size_bytes, content_type, original_filename, validation_status, "
+            "redaction_status) VALUES (:p, :r, :res, :k, :key, :h, :s, :c, :f, 'not_required', "
+            "'redacted') RETURNING id"
+        ),
+        {"p": project_id, "r": run_id, "res": result_id, "k": kind, "key": storage_key,
+         "h": sha256, "s": size_bytes, "c": content_type, "f": filename},
+    ).one()  # fmt: skip
+    return uuid.UUID(str(row[0]))
+
+
+def list_evidence(db: Session, run_id: uuid.UUID, result_id: uuid.UUID) -> list[tuple[str, str]]:
+    rows = db.execute(
+        text(
+            "SELECT original_filename, storage_key FROM public.artifacts "
+            "WHERE run_id = :r AND result_id = :res AND deleted_at IS NULL ORDER BY original_filename"
+        ),
+        {"r": run_id, "res": result_id},
+    ).all()
+    return [(r[0], r[1]) for r in rows]
 
 
 def finished_test_ids(db: Session, batch_id: uuid.UUID) -> set[uuid.UUID]:

@@ -5,8 +5,9 @@ import uuid
 import pytest
 from pydantic import ValidationError
 
+from sentinel_ai.execution.factory import create_executor
 from sentinel_ai.execution.interface import ExecutionRequest
-from sentinel_ai.execution.stub import NOT_EXECUTED, StubExecutor, create_executor
+from sentinel_ai.execution.stub import NOT_EXECUTED, StubExecutor
 from sentinel_ai.jobs.celery_app import RUN_BATCH, CeleryEnqueuer, make_celery
 from support import make_settings
 
@@ -30,7 +31,7 @@ def test_defaults_match_the_approved_design() -> None:
         {"job_max_attempts": 4},
         {"job_batch_timeout_seconds": 90000},
         {"job_max_concurrent_batches_per_run": 5, "job_max_concurrent_batches": 4},
-        {"job_executor": "docker"},
+        {"job_executor": "podman"},
     ],
 )
 def test_invalid_job_settings_are_rejected(bad: dict) -> None:
@@ -65,5 +66,4 @@ def test_stub_executor_never_claims_a_result_it_did_not_produce() -> None:
     assert out.status == "skipped" and out.summary == NOT_EXECUTED
     assert StubExecutor().execute(req, lambda: True).status == "cancelled"
     assert StubExecutor().terminate(uuid.uuid4()) is True
-    with pytest.raises(ValueError):
-        create_executor("docker")
+    assert isinstance(create_executor(make_settings()), StubExecutor)  # the default stays the stub

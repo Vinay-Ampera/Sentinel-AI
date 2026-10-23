@@ -11,6 +11,7 @@ the batch was taken away from this worker.
 """
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -21,8 +22,10 @@ from sentinel_ai.core.config import Settings
 from sentinel_ai.core.permissions import AccessLevel, Permission, has_permission
 from sentinel_ai.execution.interface import (
     OUTCOME_STATUSES,
+    EvidenceItem,
     ExecutionRequest,
     Executor,
+    WorkspaceRef,
 )
 from sentinel_ai.repositories import identity, plans, projects, runs
 from sentinel_ai.repositories.plans import PlannedTestRecord
@@ -31,10 +34,12 @@ from sentinel_ai.services import audit, authorizations, job_state
 from sentinel_ai.services import plans as plans_service
 from sentinel_ai.services import policy as policy_service
 from sentinel_ai.services import project_access as project_access_service
+from sentinel_ai.services.artifact_store import ArtifactStore, sha256_bytes
 
 logger = logging.getLogger(__name__)
 
 APPROVED_TEST = "approved"
+SAFE_NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}")
 
 
 @dataclass(frozen=True)
@@ -228,6 +233,8 @@ def _run_batch(
                 )  # fmt: skip
                 db.commit()
                 continue
+        with factory() as db:
+            workspace = _workspace(db, run, test)  # project-scoped, hash-recorded source only
         outcome = executor.execute(
             ExecutionRequest(
                 run_id=run.id,
@@ -236,21 +243,28 @@ def _run_batch(
                 check_id=str(test.definition.get("check_id", "")),
                 attempt=batch.attempt,
                 timeout_seconds=batch.timeout_seconds,
+                project_id=run.project_id,
+                workspace=workspace,
             ),
             should_stop,
         )
+        should_stop()  # re-check ownership: a reconciled batch must not record a late result
+        if state["stop"] == "lost":
+            return _settle(factory, settings, executor, run, batch, worker_id, "lost")
         valid = outcome.status in OUTCOME_STATUSES
         status = outcome.status if valid else "error"
         summary = outcome.summary if valid else "Executor reported an invalid status."
         if status == "cancelled" and state["stop"] == "timeout":
             status = "timed_out"  # stopped by the batch time limit, not by a person
         with factory() as db:
-            runs.insert_result(
+            result_id = runs.insert_result(
                 db, run_id=run.id, batch_id=batch.id, planned_test_id=test.id,
                 attempt=batch.attempt, status=status, summary=job_state.clip(summary),
                 exit_code=outcome.exit_code, duration_ms=outcome.duration_ms,
             )  # fmt: skip
             db.commit()
+        if result_id is not None and outcome.evidence:
+            _store_evidence(factory, settings, run, result_id, outcome.evidence)
         if status == "failed_to_start":
             state["stop"] = "failed_to_start"
             break
@@ -262,6 +276,61 @@ def _run_batch(
             break
 
     return _settle(factory, settings, executor, run, batch, worker_id, state["stop"])
+
+
+def _workspace(db: Session, run: RunRecord, test: PlannedTestRecord) -> WorkspaceRef | None:
+    """The test's uploaded source archive, only if it is an active source of the run's own
+    project. Anything else (other project, inactive, not an upload) yields no workspace."""
+    target = test.definition.get("target")
+    if not isinstance(target, dict):
+        return None
+    try:
+        source_id = uuid.UUID(str(target.get("source_id")))
+    except ValueError:
+        return None
+    source = next((s for s in projects.list_sources(db, run.project_id) if s.id == source_id), None)
+    if (
+        source is None
+        or not source.is_active
+        or source.source_type != "zip_upload"
+        or source.upload_artifact_id is None
+    ):
+        return None
+    artifact = projects.get_artifact(db, run.project_id, source.upload_artifact_id)
+    if artifact is None:
+        return None
+    return WorkspaceRef(artifact.storage_key, artifact.sha256, artifact.size_bytes)
+
+
+def _store_evidence(
+    factory: sessionmaker[Session],
+    settings: Settings,
+    run: RunRecord,
+    result_id: uuid.UUID,
+    items: tuple[EvidenceItem, ...],
+) -> None:
+    """Write evidence under server-chosen keys and record it. A failure here never loses the
+    result that was already committed; it is logged without content."""
+    store = ArtifactStore(settings.artifact_root())
+    limit = settings.sandbox_output_cap_bytes + 4096
+    try:
+        with factory() as db:
+            for item in items:
+                if item.kind not in ("log", "report") or not SAFE_NAME.fullmatch(item.name):
+                    continue
+                data = item.data[:limit]
+                key = f"projects/{run.project_id}/runs/{run.id}/results/{result_id}/{item.name}"
+                store.put_bytes(key, data)
+                runs.insert_evidence_artifact(
+                    db, project_id=run.project_id, run_id=run.id, result_id=result_id,
+                    kind=item.kind, storage_key=key, sha256=sha256_bytes(data),
+                    size_bytes=len(data), content_type=item.content_type, filename=item.name,
+                )  # fmt: skip
+            db.commit()
+    except Exception as exc:
+        logger.error(
+            "evidence for result %s could not be stored (%s)", result_id, type(exc).__name__
+        )
 
 
 def _already_finished(factory: sessionmaker[Session], batch_id: uuid.UUID) -> set[uuid.UUID]:
@@ -335,7 +404,7 @@ def _settle(
                 job_state.batch_to(
                     db, current, "failed", worker_id=worker_id, finish=True,
                     error_code="blocked_by_policy",
-                    error_summary="Every test in the batch was blocked by target policy.",
+                    error_summary="Every test in the batch was blocked before execution.",
                 )  # fmt: skip
                 outcome = "failed"
             else:

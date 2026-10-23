@@ -23,9 +23,3 @@ class StubExecutor:
 
     def terminate(self, batch_id: uuid.UUID) -> bool:
         return True  # nothing is ever started
-
-
-def create_executor(kind: str) -> StubExecutor:
-    if kind != "stub":
-        raise ValueError("unsupported executor")
-    return StubExecutor()

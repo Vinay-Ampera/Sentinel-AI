@@ -46,7 +46,7 @@ docker compose ps && docker compose down      # status / stop (data volume kept)
 Compose refuses to start without `REDIS_PASSWORD`; there are no default passwords. Set `REDIS_URL=redis://:PASSWORD@localhost:6379/0` in `backend/.env`.
 
 ## Job queue (Stage 7)
-Celery + Redis deliver batches to a **separate worker process**; PostgreSQL is the source of truth for every status, and Redis is only the broker. Execution is a stub until Stage 8: runs record each test as `skipped` ("Not executed"), so no target code runs.
+Celery + Redis deliver batches to a **separate worker process**; PostgreSQL is the source of truth for every status, and Redis is only the broker. By default (`JOB_EXECUTOR=stub`) runs record each test as `skipped` ("Not executed") and no target code runs; the Docker sandbox below is an explicit opt-in.
 ```bash
 docker compose up -d redis      # needs REDIS_PASSWORD (root .env); set REDIS_URL in backend/.env
 make worker                     # poetry run celery -A sentinel_ai.jobs.worker worker -Q sentinel-jobs --concurrency 2
@@ -54,6 +54,15 @@ make beat                       # periodic reconcile + dispatch (run exactly one
 ```
 Run the API as usual. Optional tuning (defaults in parentheses): `JOB_QUEUE_NAME` (sentinel-jobs), `JOB_BATCH_SIZE` (10), `JOB_MAX_CONCURRENT_BATCHES_PER_RUN` (2), `JOB_MAX_CONCURRENT_BATCHES` (4), `JOB_LEASE_SECONDS` (60), `JOB_CANCEL_GRACE_SECONDS` (30), `JOB_MAX_ATTEMPTS` (1, max 3), `JOB_RETRY_BACKOFF_SECONDS` (5), `JOB_BATCH_TIMEOUT_SECONDS` (1800), `JOB_RUN_TIMEOUT_SECONDS` (3600), `JOB_QUEUE_WAIT_SECONDS` (3600), `JOB_RECONCILE_INTERVAL_SECONDS` (30). If the broker is down, `POST /projects/{id}/test-runs` still returns `202` and the batch is dispatched later by beat. After a worker crash, wait for the lease to expire (default 60 s) and the reconciler re-queues or fails the batch visibly (`GET /test-runs/{id}/events`). Design: `docs/architecture/JOB_AND_SANDBOX_DESIGN.md`.
 Broker tests: set `TEST_DATABASE_URL` (a `*_test` database) and `TEST_REDIS_URL` (a disposable Redis) to run `tests/integration/test_celery_broker.py`; otherwise they skip.
+
+## Sandbox (Stage 8)
+Checks run in disposable Docker containers only when you opt in with `JOB_EXECUTOR=docker` (default `stub`). Containers have no network, a read-only root filesystem, no capabilities, a non-root user and CPU/memory/process/disk/time limits; the source archive is streamed over stdin and nothing from the host is mounted. Today only the developer-selectable `sandbox_smoke` check has a runner (it unpacks the uploaded ZIP and counts files; no project code runs); other checks are recorded as skipped.
+```bash
+make sandbox-image                                  # builds sentinel-sandbox-runner:stage8 from the local python:3.12-slim
+JOB_EXECUTOR=docker make worker                      # the worker host needs a Docker daemon
+poetry run pytest tests/integration/test_sandbox_docker.py   # Docker tests (skip if no daemon or image)
+```
+Settings (defaults): `SANDBOX_IMAGE`, `SANDBOX_RUNTIME` (empty = runc; e.g. `runsc`), `SANDBOX_SCOPE` (default; cleanup only touches containers with this label), `SANDBOX_CPUS` (1), `SANDBOX_MEMORY_MB` (512), `SANDBOX_PIDS` (128), `SANDBOX_WORKSPACE_MB` (128), `SANDBOX_TMP_MB` (16), `SANDBOX_MAX_EXTRACT_MB` (96), `SANDBOX_MAX_FILE_MB` (32), `SANDBOX_TEST_TIMEOUT_SECONDS` (300), `SANDBOX_OUTPUT_CAP_BYTES` (1048576). Run workers on a dedicated host: access to the Docker daemon is root-equivalent (see `docs/architecture/SANDBOX_THREAT_MODEL.md`).
 
 ## Quality commands
 `make check` (from `backend/`) runs `ruff check`, `ruff format --check`, `mypy`, and `pytest`; individual targets: `lint`, `format`, `format-check`, `typecheck`, `test`, `current`, `migrate-sql`, `migrate`.

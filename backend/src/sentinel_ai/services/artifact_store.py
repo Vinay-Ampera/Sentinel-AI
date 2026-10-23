@@ -52,6 +52,15 @@ class ArtifactStore:
                 removed += 1
         return removed
 
+    def put_bytes(self, key: str, data: bytes) -> None:
+        """Write evidence atomically under a server-generated key (same checks as ``path_for``)."""
+        final = self.path_for(key)
+        final.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.temp_dir() / f"{uuid.uuid4().hex}.part"
+        tmp.write_bytes(data)
+        os.replace(tmp, final)
+        final.chmod(0o640)
+
     def remove(self, key: str) -> None:
         self.path_for(key).unlink(missing_ok=True)
 
@@ -62,3 +71,7 @@ def sha256_file(path: Path) -> str:
         while chunk := handle.read(CHUNK):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()

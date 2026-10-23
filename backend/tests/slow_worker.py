@@ -21,5 +21,5 @@ class SlowExecutor(StubExecutor):
         return ExecutionOutcome("cancelled", "stopped")
 
 
-tasks.create_executor = lambda kind: SlowExecutor()  # type: ignore[assignment]
+tasks.create_executor = lambda settings: SlowExecutor()  # type: ignore[assignment]
 from sentinel_ai.jobs.worker import app  # noqa: E402,F401  (registers the tasks on this app)

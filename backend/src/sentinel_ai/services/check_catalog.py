@@ -97,6 +97,7 @@ class CheckSpec:
     needs_egress: bool = False
     always_requires_approval: bool = False
     developer_selectable: bool = True
+    automatic: bool = True  # False: never proposed in automatic or prompt plans
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,20 @@ def _eval_bandit(ctx: PlanContext, _t: SourceInfo | None) -> Verdict:
             "skipped", "Not applicable: Bandit analyses Python source and none was detected."
         )
     return Verdict("planned", "Python source was detected.")
+
+
+def _eval_sandbox_smoke(_ctx: PlanContext, target: SourceInfo | None) -> Verdict:
+    if target is None or target.source_type != "zip_upload":
+        return Verdict(
+            "deferred",
+            "Only an uploaded ZIP archive can be checked in the sandbox so far; Git sources "
+            "need the sandboxed clone step.",
+        )
+    return Verdict(
+        "planned",
+        "Checks that the sandbox can unpack this archive and lists what it contains. "
+        "It does not run any of the project's code.",
+    )
 
 
 def _eval_dependency_audit(ctx: PlanContext, _t: SourceInfo | None) -> Verdict:
@@ -383,6 +398,22 @@ CATALOG: dict[str, CheckSpec] = {
             ("JSON scanner output",),
             ("bandit", "python", "security", "static"),
             _eval_bandit,
+        ),
+        CheckSpec(
+            "sandbox_smoke",
+            "Sandbox self-check (archive unpack and file census)",
+            "functional",
+            "sandbox",
+            "low",
+            CODE,
+            _ALL,
+            "Unpacks the uploaded archive in a disposable, network-less container and counts the "
+            "files. Proves the sandbox path end to end; no project code is executed.",
+            ("Uploaded ZIP source", "JOB_EXECUTOR=docker and the sandbox image"),
+            ("file census (JSON)", "exit code", "captured log", "sandbox manifest"),
+            (),
+            _eval_sandbox_smoke,
+            automatic=False,
         ),
         CheckSpec(
             "dependency_audit",
@@ -627,7 +658,7 @@ def recommend(ctx: PlanContext) -> list[Proposal]:
     of the context: the same evidence always gives the same plan, in a stable order."""
     out: list[Proposal] = []
     for spec in CATALOG.values():
-        if spec.check_id == "custom_script":  # only ever developer-defined
+        if spec.check_id == "custom_script" or not spec.automatic:  # developer-defined only
             continue
         for target in _targets_for(spec, ctx):
             out.append(_proposal(spec, ctx, target, "recommended"))
@@ -641,6 +672,8 @@ def match_prompt(prompt: str) -> dict[str, list[str]]:
     text = " ".join(prompt.lower().split())
     hits: dict[str, list[str]] = {}
     for spec in CATALOG.values():
+        if not spec.automatic:
+            continue
         found = [
             k for k in spec.keywords if re.search(rf"(?<![a-z0-9]){re.escape(k)}(?![a-z0-9])", text)
         ]

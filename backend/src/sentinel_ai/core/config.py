@@ -8,6 +8,7 @@ error messages produced here.
 """
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -101,7 +102,7 @@ class Settings(DatabaseSettings):
 
     # --- Job queue (Stage 7). Redis (REDIS_URL) is the broker only; PostgreSQL is truth. ---
     job_queue_name: str = "sentinel-jobs"
-    job_executor: Literal["stub"] = "stub"  # the sandbox executor arrives in Stage 8
+    job_executor: Literal["stub", "docker"] = "stub"  # "docker" is an explicit operator opt-in
     job_batch_size: int = 10
     job_max_concurrent_batches_per_run: int = 2
     job_max_concurrent_batches: int = 4
@@ -113,6 +114,22 @@ class Settings(DatabaseSettings):
     job_run_timeout_seconds: int = 3600
     job_queue_wait_seconds: int = 3600
     job_reconcile_interval_seconds: int = 30
+
+    # --- Sandbox (Stage 8; only used when JOB_EXECUTOR=docker). Network is always "none". ---
+    sandbox_image: str = "sentinel-sandbox-runner:stage8"
+    sandbox_runtime: str | None = None  # e.g. "runsc" (gVisor) or a Kata runtime; default runc
+    sandbox_scope: str = "default"  # label that scopes cleanup/janitor to this deployment/test
+    sandbox_docker_bin: str | None = None
+    sandbox_cpus: float = 1.0
+    sandbox_memory_mb: int = 512
+    sandbox_pids: int = 128
+    sandbox_workspace_mb: int = 128
+    sandbox_tmp_mb: int = 16
+    sandbox_max_extract_mb: int = 96  # must fit the workspace tmpfs
+    sandbox_max_file_mb: int = 32
+    sandbox_test_timeout_seconds: int = 300
+    sandbox_output_cap_bytes: int = 1_048_576
+    sandbox_start_timeout_seconds: int = 60
 
     # --- LLM (consumed from Stage 11) ---
     gemini_api_key: SecretStr | None = None
@@ -156,6 +173,16 @@ class Settings(DatabaseSettings):
         "job_run_timeout_seconds",
         "job_queue_wait_seconds",
         "job_reconcile_interval_seconds",
+        "sandbox_cpus",
+        "sandbox_memory_mb",
+        "sandbox_pids",
+        "sandbox_workspace_mb",
+        "sandbox_tmp_mb",
+        "sandbox_max_extract_mb",
+        "sandbox_max_file_mb",
+        "sandbox_test_timeout_seconds",
+        "sandbox_output_cap_bytes",
+        "sandbox_start_timeout_seconds",
         "llm_max_tokens_per_run",
         "llm_max_cost_usd_per_run",
         "llm_max_cost_usd_per_day",
@@ -174,6 +201,24 @@ class Settings(DatabaseSettings):
             raise ValueError("job timeouts must be <= 86400 seconds")
         if self.job_max_concurrent_batches_per_run > self.job_max_concurrent_batches:
             raise ValueError("per-run batch concurrency cannot exceed the global limit")
+        return self
+
+    @model_validator(mode="after")
+    def _sandbox_limits(self) -> "Settings":
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_./:@-]{0,199}", self.sandbox_image):
+            raise ValueError("SANDBOX_IMAGE must be a plain image reference")
+        if self.sandbox_runtime is not None and not re.fullmatch(
+            r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}", self.sandbox_runtime
+        ):
+            raise ValueError("SANDBOX_RUNTIME must be a plain runtime name")
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}", self.sandbox_scope):
+            raise ValueError("SANDBOX_SCOPE must be a short plain label value")
+        if self.sandbox_max_extract_mb >= self.sandbox_workspace_mb:
+            raise ValueError("SANDBOX_MAX_EXTRACT_MB must be smaller than SANDBOX_WORKSPACE_MB")
+        if self.sandbox_workspace_mb + self.sandbox_tmp_mb >= self.sandbox_memory_mb:
+            raise ValueError("tmpfs sizes count against memory: raise SANDBOX_MEMORY_MB")
+        if self.sandbox_max_file_mb > self.sandbox_max_extract_mb:
+            raise ValueError("SANDBOX_MAX_FILE_MB cannot exceed SANDBOX_MAX_EXTRACT_MB")
         return self
 
     @model_validator(mode="after")

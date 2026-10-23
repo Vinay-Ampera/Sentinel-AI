@@ -1,5 +1,5 @@
 # Baseline quality commands (run from backend/). `make check` = lint + format check + types + tests.
-.PHONY: install lint format format-check typecheck test check migrate migrate-sql current worker beat
+.PHONY: install lint format format-check typecheck test check migrate migrate-sql current worker beat sandbox-image
 
 install:
 	poetry install
@@ -25,3 +25,6 @@ worker:
 	poetry run celery -A sentinel_ai.jobs.worker worker -Q $${JOB_QUEUE_NAME:-sentinel-jobs} --concurrency 2 -l INFO
 beat:
 	poetry run celery -A sentinel_ai.jobs.worker beat -l INFO
+
+sandbox-image:
+	docker build -t sentinel-sandbox-runner:stage8 ../sandbox

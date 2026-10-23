@@ -181,3 +181,52 @@ def test_hard_killed_real_worker_is_recovered_and_the_batch_finishes(
     )
     assert len(rows) == 2 and len({r[0] for r in rows}) == 2 and {r[2] for r in rows} == {"skipped"}
     assert s.request("GET", f"{API}/test-runs/{run_id}").json()["status"] == "completed"
+
+
+def test_real_worker_process_runs_the_smoke_check_in_a_docker_sandbox(
+    make_env: Callable[..., object],  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """Redis -> separate Celery worker process (JOB_EXECUTOR=docker) -> sandbox container ->
+    evidence, with the API side only publishing."""
+    from test_plans_api import add_zip_and_analyse, dev_plan, new_project, submit, user
+    from test_runs_jobs import sql, start
+
+    from sentinel_ai.execution.docker_runner import DockerRunner
+    from sentinel_ai.jobs.celery_app import CeleryEnqueuer
+
+    runner = DockerRunner(f"celery-{uuid.uuid4().hex[:8]}")
+    if not (runner.available() and runner.image_exists("sentinel-sandbox-runner:stage8")):
+        pytest.skip("Docker or the sandbox runner image is not available")
+    queue = f"sbx-{uuid.uuid4().hex[:8]}"
+    e = make_env(redis_url=TEST_REDIS_URL, job_queue_name=queue, job_executor="docker", sandbox_scope=runner.scope)  # type: ignore[operator]  # fmt: skip
+    e.app.state.enqueue = CeleryEnqueuer(e.app.state.settings)
+    dev, s = user(e)
+    pid = new_project(s)
+    src, _ = add_zip_and_analyse(s, pid)
+    plan = dev_plan(s, pid, [{"check_id": "sandbox_smoke", "source_id": src}]).json()["id"]
+    assert submit(s, plan).json()["status"] == "approved"
+
+    worker = _worker(
+        "sentinel_ai.jobs.worker", queue,
+        {"JOB_EXECUTOR": "docker", "SANDBOX_SCOPE": runner.scope, "ARTIFACT_STORAGE_DIR": str(tmp_path)},
+    )  # fmt: skip
+    try:
+        run_id = start(s, pid, plan).json()["id"]
+        deadline = time.time() + 60
+        status = "queued"
+        while time.time() < deadline and status not in ("completed", "failed", "cancelled"):
+            time.sleep(0.5)
+            status = sql(e, "SELECT status FROM public.test_runs WHERE id = %s", run_id)[0][0]
+    finally:
+        worker.terminate()
+        worker.wait(timeout=20)
+        left = runner._ids() or []
+        if left:
+            runner._docker("rm", "-f", "-v", *left)
+    assert status == "completed"
+    assert sql(e, "SELECT status FROM public.test_results WHERE run_id = %s", run_id) == [
+        ("passed",)
+    ]
+    assert sql(e, "SELECT count(*) FROM public.artifacts WHERE run_id = %s", run_id)[0][0] == 3
+    assert left == []
