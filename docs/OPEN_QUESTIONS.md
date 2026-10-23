@@ -83,3 +83,27 @@ Resolved in Stage 3: Q9-era toolchain gap "baseline lint/format/type/test comman
 | Q38 | **Resolved 2026-10-22:** keep the raw `application/zip` upload (streamed size cap, no extra dependency). Reopen only if the frontend needs multipart | Closed | - |
 | Q39 | Temp-file half **resolved** (startup purge + `cli purge-temp`). Open: retention sweep for uploaded archives (proposal: 30 days after the last run) needs run history | Stage 7+ | Retention sweeper |
 
+## Stage 6 additions and resolutions (2026-10-22)
+| # | Question | Blocks | Handling |
+|---|---|---|---|
+| Q27 | **Resolved, revised in the access review:** approval is requested from explicit project members (designated approvers, else project managers), never the requester, with an organization role bound for high/critical; the global `developer_approval_risk_levels` delegation was removed. No role has implicit project access (Super Admin included). | Closed | ADR-0003 |
+| Q34 | Partially resolved: `GET /approvals` gives Admin/delegated Developers a scoped inbox. `GET /users` for Developers is still not built | Later | Build with the admin UI |
+| Q36 | **Narrowed again:** target authorization for remote dev/staging URLs is built (request, decide, revoke, gate). *Analysis* of Git / localhost / remote sources still needs the Stage 8 sandbox (clone, reachability, DNS re-resolution at use time) | Stage 8 | Implement with Stage 8 |
+| Q40 | Prompt-based planning is deterministic keyword selection from the catalog. Free-text understanding (and LLM-assisted proposals) is Stage 11; it must keep producing catalog entries only | Stage 11 | Reuse `check_catalog` |
+| Q41 | Authorization approvals are decided through `POST /approvals/{id}/decision` (API_DESIGN no longer lists a separate `/authorizations/{aid}/decision`). Confirm | No | Owner to confirm |
+| Q42 | Localhost URL sources need no authorization (loopback-only by validation and DB CHECK). Whether a sandbox can reach them is Q26 | Stage 8 | Decide with the threat model |
+| Q43 | Authorization window caps (30 days; production 24 h), `allowed_risk` limited to low/medium/high, plan size (60), parameters (5) and plan-creation rate limit (30/min per user, in process) are constants in code. Confirm or make configurable | No | Owner to confirm |
+| Q44 | Plan-level approval only (one approval per submitted plan at its highest risk). Per-test approvals (column exists) are unused. Withdraw = the requester rejecting their own pending plan; there is no "revise a submitted plan" - create a new version | No | Owner to confirm |
+| Q45 | Production remote sources cannot be registered (Stage 5), so production authorization is unreachable through the API; the policy/Super Admin path is implemented and tested against a database-inserted source. Decide whether/when to allow registering production sources at all | Later | Owner decision |
+| Q46 | Frontend has sign-in, project/plan list, plan review/submit/approve/reject, but no router, project/source creation, upload, analysis, authorization or policy screens; verified by unit tests only (no browser/axe run) | Stage 9+ | Grow UI with later stages |
+
+## Access review decisions - resolved by the owner (2026-10-23)
+| # | Decision | Implementation |
+|---|---|---|
+| Q47 | **Resolved:** temporary, time-limited, fully audited Super Admin break-glass access. | `POST /projects/{id}/break-glass` (Super Admin; justification ≥ 20 chars; 5-240 minutes, DB cap 4 h; READ-only; one active grant per project and user; no extension, no edits). Revocable at once by the grantee or a project manager; managers can list grants. Expiry by the database clock; only while the user is still a Super Admin. Audit: `breakglass.grant`, `breakglass.access` (every request served only because of it), `breakglass.revoke`. Migration 0004 (new table `break_glass_grants`). Break-glass projects are not added to `GET /projects`. |
+| Q48 | **Resolved:** Super Admin needs explicit project access before approving production. | Decisions use `resolve_explicit_access`; break-glass never counts (403 "read-only"), and a designation does not either. Any explicit grant (read is enough) qualifies. |
+| Q49 | **Resolved:** Developers cannot approve high/critical risk by default. | The organization key `high_risk_approver_roles` (Super Admin only) may add `developer`; default `["admin","super_admin"]`. Projects cannot set it. Even when opted in, a Developer still needs a project grant (manager or designated) and cannot approve their own request. Empty or unknown values fall back to Super Admin only. |
+| Q50 | **Resolved:** no self-approval; a different authorized person approves. | Enforced at every risk level and role (policy code); the requester may only withdraw (reject). DB CHECK also blocks self-approval for high/critical. |
+| Q51 | **Resolved:** project managers manage project risk policy within organization limits. | `PUT /projects/{id}/policies/{key}` needs `manage`; allowed levels intersect with the organization's, approval levels only add, production can never be enabled by a project. Unused role permissions `approval.low_medium` and `policy.project_scope` removed. |
+
+Residual notes: break-glass has no organization kill switch yet and no notification to project managers beyond the audit log and the grant list (candidate for Stage 12 alerts).

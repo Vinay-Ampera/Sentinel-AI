@@ -638,8 +638,8 @@ This section lists only each stage's status, next action, requirements and accep
 - A repeatable analysis result is persisted and visible.
 
 ### Stage 6 — Test plans and approval policies
-**Status:** Pending  
-**Next action:** Ready to start on owner go-ahead.
+**Status:** Completed  
+**Next action:** Owner review and commit; apply migration 0003 to the real database (`alembic upgrade head`). Stage 7 not started. Criterion 4 (plan linked to a run) is enforced in the schema; run creation itself is Stage 7.
 
 **Work**
 - Define test-plan and planned-test models.

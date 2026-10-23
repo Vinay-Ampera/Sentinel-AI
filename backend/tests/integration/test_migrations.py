@@ -140,6 +140,12 @@ def _plan_and_run(conn: psycopg.Connection, s: _Seed) -> tuple[object, object]:
         "VALUES (%s, 1, 'automatic', %s) RETURNING id",
         (s.project, s.user),
     ).fetchone()[0]  # type: ignore[index]
+    # Runs need an approved (hash-bound) plan: migration 0003.
+    conn.execute(
+        "UPDATE public.test_plans SET status = 'approved', content_sha256 = repeat('a', 64), "
+        "policy_snapshot = '{}'::jsonb, submitted_by = %s, submitted_at = now() WHERE id = %s",
+        (s.user, plan),
+    )
     run = conn.execute(
         "INSERT INTO public.test_runs (project_id, plan_id, requested_by) "
         "VALUES (%s, %s, %s) RETURNING id",
@@ -276,7 +282,11 @@ def test_source_and_authorization_guards(conn: psycopg.Connection, seed: _Seed) 
 def test_high_risk_planned_test_must_require_approval(
     conn: psycopg.Connection, seed: _Seed
 ) -> None:
-    plan, _ = _plan_and_run(conn, seed)
+    plan = conn.execute(  # a draft: tests cannot be added to an approved plan (migration 0003)
+        "INSERT INTO public.test_plans (project_id, version, plan_mode, created_by) "
+        "VALUES (%s, 1, 'automatic', %s) RETURNING id",
+        (seed.project, seed.user),
+    ).fetchone()[0]  # type: ignore[index]
     ins = (
         "INSERT INTO public.planned_tests (plan_id, ordinal, name, category, tool, origin, "
         "risk_level, requires_approval) VALUES (%s, %s, 'n', 'security', 'zap', 'recommended', %s, %s)"

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sentinel_ai.api import admin, auth, health, projects
+from sentinel_ai.api import admin, auth, break_glass, governance, health, plans, projects
 from sentinel_ai.core.config import Settings, get_settings
 from sentinel_ai.core.errors import install_error_handlers
 from sentinel_ai.core.logging import configure_logging
@@ -54,9 +54,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_middleware(app)
     install_error_handlers(app)
     app.state.settings = settings
+    app.state.plan_limiter = RateLimiter(plans.PLANS_PER_MINUTE)
     app.state.login_limiter = RateLimiter(settings.login_ip_max_attempts_per_minute)
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(projects.router, prefix="/api/v1")
+    app.include_router(plans.router, prefix="/api/v1")
+    app.include_router(governance.router, prefix="/api/v1")
+    app.include_router(break_glass.router, prefix="/api/v1")
     return app

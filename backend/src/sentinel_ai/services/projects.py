@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from sentinel_ai.core.config import Settings
 from sentinel_ai.core.errors import DomainError
-from sentinel_ai.core.permissions import AccessLevel, Role, access_level_from_name
+from sentinel_ai.core.permissions import AccessLevel, access_level_from_name
 from sentinel_ai.repositories import identity, projects
 from sentinel_ai.repositories.identity import UserRecord
 from sentinel_ai.repositories.projects import (
@@ -103,25 +103,14 @@ def create_project(
 def list_projects(
     db: Session, ctx: RequestContext, user: UserRecord, *, include_archived: bool, limit: int
 ) -> list[tuple[ProjectRecord, AccessLevel | None]]:
-    """Admins see only projects they hold a grant on (no implicit global access); the
-    Super Admin sees every project, and that listing is audited."""
-    everything = user.role_name == Role.SUPER_ADMIN
+    """Only projects the caller holds a grant on, whatever the role."""
     rows = projects.list_projects(
-        db, user.id, all_projects=everything, include_archived=include_archived, limit=limit
+        db, user.id, all_projects=False, include_archived=include_archived, limit=limit
     )
-    if everything:
-        audit.record(
-            db,
-            ctx,
-            action="project.list_all",
-            outcome="success",
-            actor_user_id=user.id,
-            detail={"count": len(rows)},
-        )
     result = []
     for project, grants in rows:
         levels = [lv for g in grants if (lv := access_level_from_name(g)) is not None]
-        result.append((project, max(levels, default=AccessLevel.MANAGE if everything else None)))
+        result.append((project, max(levels, default=None)))
     return result
 
 
@@ -500,10 +489,17 @@ def list_snapshots(db: Session, project_id: uuid.UUID, limit: int) -> list[Snaps
     return projects.list_snapshots(db, project_id, limit)
 
 
-def get_snapshot(db: Session, user: UserRecord, snapshot_id: uuid.UUID) -> SnapshotRecord | None:
+def get_snapshot(
+    db: Session, ctx: RequestContext, user: UserRecord, snapshot_id: uuid.UUID
+) -> SnapshotRecord | None:
     """Return the snapshot only if the caller can read its project, else None (404)."""
     snapshot = projects.get_snapshot(db, snapshot_id)
     if snapshot is None:
         return None
     level = project_access_service.resolve_access(db, user, snapshot.project_id)
-    return snapshot if level is not None else None
+    if level is None:
+        return None
+    project_access_service.note_break_glass_use(
+        db, ctx, user, snapshot.project_id, AccessLevel.READ
+    )
+    return snapshot

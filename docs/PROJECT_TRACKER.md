@@ -14,7 +14,7 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 3 | Local services and configuration | Completed | Section 4; Redis deferred to Stage 7 |
 | 4 | Authentication and RBAC (identity, roles, audit) | Completed | Authentication + RBAC done; project/membership routes delivered in Stage 5; approval-decision audit in Stage 6 |
 | 5 | Project intake and deterministic analysis | Completed | ZIP upload + static analysis done; Git/localhost/remote registered, not analysed (Q36) |
-| 6 | Test plans and approval policies | Pending | Not started |
+| 6 | Test plans and approval policies | Completed | Section 7 (2026-10-22 Stage 6 entry); migration 0003 not yet applied to the real DB |
 | 7 | Job queue, batches, cancellation, recovery | Pending | Not started |
 | 8 | Sandboxed execution foundation | Pending | Not started |
 | 9 | First QA execution path | Pending | Not started |
@@ -26,26 +26,27 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 15 | Regression verification and reliability | Pending | Not started |
 | 16 | CI, Docker, deployment readiness, docs | Pending | Not started |
 
-Owner review/commit state: Stages 0, 2, 3 were committed (cf4f1ee). Stages 4 and 5 are implemented but **uncommitted** as of 2026-10-22.
+Owner review/commit state: Stages 0-5 are committed and pushed (owner report, 2026-10-22). Stage 6 is implemented but **uncommitted**.
 
-## 2. Latest verified results (Stage 5 completion, 2026-10-22)
+## 2. Latest verified results (Stage 6 completion, 2026-10-22)
 
 Disposable PostgreSQL 17 database only; nothing was run against the live `sentinel-ai` database, a live server, or a browser.
 
 | Check | Result |
 |---|---|
-| pytest with disposable DB | 184 passed (1 upstream httpx/starlette warning) |
-| pytest without DB | 116 passed, 68 skipped (DB tests skip by design) |
+| pytest with disposable DB | 246 passed (1 upstream httpx/starlette warning) |
+| pytest without DB | 144 passed, 102 skipped (DB tests skip by design) |
 | `ruff check` | clean |
-| `ruff format --check` | clean (57 files) |
-| `mypy` | clean (37 source files) |
-| Database changes in Stages 4-5 | none (no migration) |
+| `ruff format --check` | clean (75 files) |
+| `mypy` | clean (50 source files) |
+| Frontend `npm run lint` / `npm test` / `npm run build` | oxlint clean; vitest 11 passed (3 files); build succeeded |
+| Database changes in Stage 6 | two additive migrations, `0003_plan_integrity` and `0004_break_glass` (applied to the disposable DB only; **neither applied to the real DB**) |
 
 ## 3. Decisions and scope (pointers and summaries)
 
 - **Stack (ADR-0001, Accepted):** FastAPI, Celery + Redis, LangGraph, Gemini, Docker; React + Vite + JavaScript (no TypeScript); Python 3.12 + Poetry; PostgreSQL + Alembic.
 - **Authentication (ADR-0002, Accepted in Stage 4):** email + password, Argon2id, server-side sessions with HMAC-hashed tokens, CSRF header + Origin allow-list, lockout and rate limiting; no SSO or bearer tokens in the first release.
-- **Permission matrix:** `SECURITY_AND_SAFETY.md`; implemented in `backend/src/sentinel_ai/core/permissions.py`. Policy-dependent rows default to deny until Stage 6 (Q27, Q34).
+- **Permission matrix:** `SECURITY_AND_SAFETY.md`; implemented in `backend/src/sentinel_ai/core/permissions.py`. Policy-dependent rows were deny-by-default until Stage 6; approvals now follow `services/policy.py` (Q27 resolved, ADR-0003).
 - **Stage 5 scope decisions:** ZIP upload is the analysable source type; Git, localhost and remote-URL sources are registered and validated but not analysed; production remote targets are refused; raw `application/zip` upload instead of multipart (Q38); synchronous analysis returning 201 until Stage 7 (Q37).
 - **Swagger local sign-in:** outside production the API's own origin is accepted by the Origin check; production accepts only `CORS_ALLOWED_ORIGINS`; the CSRF header is declared in OpenAPI.
 - **First-release scope (confirmed 2026-10-22, moved here from the Stage 0 section of the plan):**
@@ -58,7 +59,8 @@ Disposable PostgreSQL 17 database only; nothing was run against the live `sentin
 
 ## 4. Remaining work and known issues
 
-- Stage 6 not started; no work begins without owner go-ahead.
+- Stage 7 not started; no work begins without owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`; the worker must re-run the target gate (Stage 7).
+- Owner actions for Stage 6: review and commit; apply migrations 0003 and 0004 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0004_break_glass --sql` (awaiting your approval; not done). No new environment variables were added, so `.env`/`.env.example` need no change.
 - Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
 - Asynchronous analysis (Q37, Stage 7); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
 - Redis not started locally (Q32, deferred to Stage 7); readiness does not require Redis (Q31).
@@ -82,6 +84,9 @@ Disposable PostgreSQL 17 database only; nothing was run against the live `sentin
 
 **Stage 4 — Authentication and RBAC (identity, roles, audit)**  
 **Status:** AUTHENTICATION + RBAC DONE pending owner review (2026-10-22); project ownership/membership routes and approval-decision auditing deferred to the stages that create those routes (see progress log)
+
+**Stage 6 — Test plans and approval policies**  
+**Status:** DONE pending owner review (2026-10-22); details in the progress log (section 7)
 
 **Stage 5 — Project intake and deterministic analysis**  
 **Status:** DONE pending owner review (2026-10-22): ZIP upload + static analysis; Git / localhost / remote-URL sources are registered and validated but not analysed (analysis depends on Stage 6 authorization and the Stage 8 sandbox; see Q36)
@@ -294,3 +299,52 @@ Status: no stage status changed
 Changes made: IMPLEMENTATION_PLAN.md reduced to stage list with status (Pending / Ongoing / Completed), next action, requirements and acceptance criteria; the long per-stage status text, the Stage 0 first-release scope block, the progress-update template and the progress log were moved here without loss. CLAUDE.md files keep permanent instructions only; README status lines point to this file.
 Application code: not modified. Stage 6: not started.
 ```
+
+```text
+Date: 2026-10-22
+Stage: 6 — Test plans and approval policies
+Status: DONE pending owner review. Not done: running anything (Stages 7-10), frontend screens beyond sign-in / plan list / plan review, a revise-after-submit flow (create a new version instead), per-test approvals.
+Implemented (ADR-0003, Accepted): 
+ - Check catalog (services/check_catalog.py): 15 catalog checks with category, tool, base risk, prerequisites, expected evidence, keywords; automatic recommendation is a pure function of the analysis, so identical evidence gives an identical plan. Every outcome is explained: planned / skipped (not applicable) / deferred (prerequisite missing) / blocked (policy or target). Prompt mode = deterministic keyword selection (prompt stored as data, never interpreted); developer-defined mode = catalog check + validated parameters (no commands, risk or approval flags; extra fields are rejected); custom scripts need an accepted project script artifact and are always high risk with approval.
+ - Policy (services/policy.py): effective policy = global + project, project only stricter, malformed values fall back to safest; approval floor high/critical (also a DB CHECK); intrusive and custom checks always need a human; who may decide is one pure function (Admin/Super Admin for high/critical and never the requester; Developers only for delegated low/medium with run access; production authorization Super Admin only + global flag + reason + 24 h cap). Policy admin routes (global: Super Admin; project: Admin with manage access) with value validation; llm_limits is not editable yet.
+ - Plans API: create (rate limited), list, get, edit-while-draft, submit (re-checks target gate, recomputes approval need, freezes, stores SHA-256 content hash + policy snapshot; auto-approves when nothing needs a human), approvals inbox and decision (content hash re-verified; decisions final; requester can withdraw but never approve; refusals audited).
+ - Target authorization (services/authorizations.py): request/list/revoke for remote dev/staging sources; hosts fixed by the source; path prefixes, methods, risk levels, window caps; gate_reason blocks tests whose remote target lacks an approved, unexpired, covering authorization (and production when the policy forbids it); decided via the approvals endpoint.
+ - Audit actions added: plan.create/update/submit/auto_approved, approval.decision/denied/list_all, authorization.request/revoke/denied, policy.update/denied.
+ - Frontend: services/api.js (credentials, CSRF header, error envelope, shape checks), sign-in form, project/plan list, plan review with loading/error/empty states, per-status groups with reasons, draft remove/submit, approve/reject/withdraw with reason, server refusal messages; Vite dev proxy for /api.
+Database changes: ONE additive migration, 0003_plan_integrity (test_plans content_sha256/policy_snapshot/submitted_*, target_authorizations.justification, approvals self-approval CHECK and finality trigger, frozen-plan and planned-test guard triggers, test_runs plan guard). No data rewritten, no reset. Applied to the DISPOSABLE database only; the real sentinel-ai database was not touched. Existing tests that insert runs/planned tests directly were adjusted for the new guards (tests/integration/test_migrations.py).
+Files: backend/migrations/versions/0003_plan_integrity.py; backend/src/sentinel_ai/{api/plans.py, api/governance.py, schemas/plans.py, services/{check_catalog,policy,plans,approvals,authorizations}.py, services/project_access.py (authorize_project), repositories/{plans,policies}.py, main.py}; pyproject.toml (E501 exemptions for catalog/service files with long user-facing strings); tests/unit/{test_check_catalog,test_policy}.py, tests/integration/test_plans_api.py (26 tests), tests/integration/test_migrations.py; frontend/src/{services/api.js, features/auth/SignIn.jsx, features/plans/*, app/App.jsx}, frontend/tests/{PlanReview.test.jsx, api.test.js, App.test.jsx}, frontend/vite.config.js; docs (API_DESIGN, DATABASE_SCHEMA, SECURITY_AND_SAFETY, OPEN_QUESTIONS, ADR-0003, backend/CLAUDE.md).
+Commands actually run: temporary PostgreSQL 17 on a unix socket (own data dir, database sentinel_ai_test; recreated once after editing the unreleased migration); backend: pytest with and without TEST_DATABASE_URL, ruff check, ruff format --check, mypy, alembic upgrade 0002:0003 --sql (offline render only); frontend: npm run lint, npm test, npm run build.
+Results (DISPOSABLE database only): pytest 234 passed (140 passed + 94 skipped without a database); ruff, format (71 files) and mypy (47 files) clean; frontend lint clean, vitest 11 passed, build ok.
+Defects found and fixed by the tests: a URL path like "//evil.com" passed the URL-path pattern (could redirect a naive URL join) - now rejected; a failed submit rolled back the gate's blocked statuses, leaving a stale draft - now persisted before the error.
+Acceptance criteria: (1) Users see what is planned before execution - met: plan API/UI show every check, risk, reason, prerequisites, evidence and approval need before anything can run; `execution_available:false` is stated. UI verified by unit tests only. (2) Approval rules enforced server-side - met: tests cover developer/peer/outsider/requester/Admin/Super Admin, delegation, project narrowing, production block, finality, hash binding, and DB-level constraints. (3) Unavailable or inapplicable checks explained - met (skipped/deferred/blocked each carry a reason; tested). (4) Plan snapshot linked to the resulting run - met at the schema level: test_runs.plan_id is NOT NULL and a trigger allows only an approved plan of the same project (tested by direct inserts); no API creates runs until Stage 7, so end-to-end linkage is NOT yet exercised.
+NOT run: anything against the real sentinel-ai database (migration 0003 unapplied there); a live uvicorn/Vite session or browser; axe-core; any test execution (no runner exists, by design).
+Known issues / owner actions: Q40-Q46; apply migration 0003 and commit; consider the Stage 7 worker re-validating gate_reason before execution.
+Next action: owner review/commit. Stage 7 not started.
+```
+
+```text
+Date: 2026-10-22
+Stage: 6 (access and risk-approval review; no Stage 7 work)
+Status: DONE pending owner review. Decisions Q47-Q51 need owner confirmation.
+Review findings: (1) high/critical approval was effectively role-driven (any Admin/Super Admin with access) and Developer delegation was a global switch; (2) Super Admin had implicit access (audited) to every project, contradicting "privileges do not open every project's logs"; (3) project policy could be edited only by Admins, so the project owner did not control their risk levels; (4) risk levels were implicit.
+Changes: services/project_access.py, api/deps.py, services/projects.py, services/approvals.py - no role has implicit project access (Super Admin branch, "privileged access" audit and "list all" removed). services/policy.py rewritten: eligibility = explicit grant + not requester + org role bound for high/critical + project designation or project managers; new policy keys allowed_risk_levels (org, project; intersection, malformed -> low only), high_risk_approver_roles (org; developers never), risk_approvers (project; designees validated as active project members, org-allowed role for high/critical); developer_approval_risk_levels removed. Project policy routes moved to /projects/{id}/policies[/{key}] and need manage access (any role). services/authorizations.py gate blocks risk levels the project disallows. check_catalog.RISK_DEFINITIONS (and exposed via GET /projects/{id}/policy); catalog risk values reviewed - no change needed, enforced by a unit test. PlanOut.viewer_can_approve (UI hint); the frontend uses it instead of guessing from the role. Docs: SECURITY_AND_SAFETY, API_DESIGN, ADR-0003 (amended), OPEN_QUESTIONS, backend/CLAUDE.md.
+Database changes: NONE in this review (policy rows are existing public.policies; migration 0003 unchanged and still unapplied to the real DB).
+Commands actually run: disposable PostgreSQL 17; pytest with and without it; ruff check; ruff format --check; mypy; frontend npm run lint/test/build.
+Results (DISPOSABLE database only): pytest 239 passed (144 passed + 95 skipped without a DB); ruff, format and mypy clean; frontend lint clean, vitest 11 passed, build ok.
+Tests added/changed: tests/unit/test_policy.py rewritten (eligibility matrix, designation, org bounds, validation, catalog risk rules); tests/integration/test_plans_api.py: roles add no access to plans/approvals, owner-chosen approvers and risk levels, project-manager policy control, production unlock path with grants, inbox scoping; test_projects_api/test_authorization updated for no implicit Super Admin access.
+NOT run: real sentinel-ai database, live server/browser. No run/result/log routes exist yet; the isolation rule for them is documented and must be applied in Stage 7+.
+```
+
+```text
+Date: 2026-10-23
+Stage: 6 (owner decisions Q47-Q51; no Stage 7 work)
+Status: DONE pending owner review.
+Implemented: Q47 break-glass (migration 0004_break_glass, repositories/break_glass.py, services/break_glass.py, api/break_glass.py; project_access resolves READ for an active grant of a current Super Admin; every request served only by it is audited as breakglass.access; grant/revoke audited; grants listable by project managers; DB trigger forbids extension/edits, CHECK caps 4 h). Q48 approvals use resolve_explicit_access (break-glass or designation-without-membership never decides; production needs an explicit grant). Q49 high_risk_approver_roles may include developer only via the organization setting (Super Admin; projects cannot set it; empty value rejected); default unchanged. Q50 verified at every role/risk by tests (requester can only withdraw). Q51 already implemented; unused permissions approval.low_medium and policy.project_scope removed. get_snapshot now audits break-glass use.
+Tests added: unit (developer opt-in, empty roles, malformed roles); integration: break-glass lifecycle (role gate, validation, read-only, other projects closed, audit rows, manager visibility, revoke by grantee/manager, strangers 404), expiry by DB clock and non-extension (DB trigger/CHECK), break-glass ends when the user is no longer a Super Admin, break-glass cannot decide or be designated, production approval needs explicit access, developer opt-in flow, no self-approval for developer/admin/super_admin at medium risk.
+Database changes: migration 0004_break_glass (new table + guard trigger), additive. Applied to the DISPOSABLE database only. The real sentinel-ai database was not touched and awaits your approval for 0003 and 0004.
+Commands actually run: disposable PostgreSQL 17 (recreated; the earlier scratchpad had been cleaned); pytest with and without it (repeated); ruff check; ruff format --check; mypy; frontend npm run lint/test/build.
+Results (DISPOSABLE database only): pytest 246 passed (144 passed + 102 skipped without a DB); ruff, format (75 files) and mypy (50 files) clean; frontend lint clean, vitest 11 passed, build ok.
+Observation: one full-suite run on the freshly created disposable cluster, before any change in this round, reported 1 failure that I could not reproduce (three later full runs passed 239/239, and all runs since pass). The failing test was not identified; treat as an unexplained flake until seen again.
+NOT run: real database, live server/browser. Stage 7 not started.
+```
+

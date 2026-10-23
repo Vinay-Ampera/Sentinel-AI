@@ -144,17 +144,7 @@ def require_project_access(minimum: AccessLevel) -> Callable[..., Principal]:
         db: Session = Depends(get_db),
         ctx: RequestContext = Depends(request_context),
     ) -> Principal:
-        project_access_service.require_project_access(db, principal.user, project_id, minimum)
-        if project_access_service.is_privileged_only(db, principal.user, project_id):
-            audit.record(
-                db,
-                ctx,
-                action="project.privileged_access",
-                outcome="success",
-                actor_user_id=principal.user.id,
-                project_id=project_id,
-                detail={"min_level": minimum.name.lower()},
-            )
+        project_access_service.authorize_project(db, ctx, principal.user, project_id, minimum)
         return principal
 
     return dependency

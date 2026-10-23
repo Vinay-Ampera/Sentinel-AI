@@ -1,9 +1,8 @@
 """Role -> capability matrix (docs/SECURITY_AND_SAFETY.md) and project access levels.
 
 Role grants capabilities; project access grants scope. A route needing both checks both.
-"Policy-dependent" rows of the matrix (Developer approvals "only if policy delegates",
-Admin "in scope") are NOT granted here: they need the policy/scope data that arrives with
-the approval and project stages, so the deterministic default is deny.
+Who may *approve* is not a role permission: it is decided by services/policy.py from the
+project grant, the project's approvers and organization policy.
 """
 
 from enum import IntEnum, StrEnum
@@ -28,7 +27,6 @@ class Permission(StrEnum):
     FINDING_RISK_DECISION = "finding.risk_decision"
     MEMBERS_MANAGE = "project.members_manage"
     # approvals
-    APPROVE_LOW_MEDIUM_RISK = "approval.low_medium"
     APPROVE_HIGH_RISK = "approval.high_risk"
     APPROVE_REMOTE_TARGET = "approval.remote_target"
     APPROVE_PRODUCTION = "approval.production"
@@ -36,8 +34,8 @@ class Permission(StrEnum):
     USER_LIST = "user.list"
     USER_MANAGE_DEVELOPERS = "user.manage_developers"
     USER_MANAGE_PRIVILEGED = "user.manage_privileged"
-    POLICY_PROJECT_SCOPE = "policy.project_scope"
     POLICY_GLOBAL = "policy.global"
+    BREAK_GLASS = "project.break_glass"
     AUDIT_READ_OWN = "audit.read_own"
     AUDIT_READ_SCOPE = "audit.read_scope"
     AUDIT_READ_ALL = "audit.read_all"
@@ -58,18 +56,17 @@ _DEVELOPER = frozenset(
 )
 _ADMIN = _DEVELOPER | {
     Permission.FINDING_RISK_DECISION,
-    Permission.APPROVE_LOW_MEDIUM_RISK,
     Permission.APPROVE_HIGH_RISK,
     Permission.APPROVE_REMOTE_TARGET,
     Permission.USER_LIST,
     Permission.USER_MANAGE_DEVELOPERS,
-    Permission.POLICY_PROJECT_SCOPE,
     Permission.AUDIT_READ_SCOPE,
 }
 _SUPER_ADMIN = _ADMIN | {
     Permission.APPROVE_PRODUCTION,
     Permission.USER_MANAGE_PRIVILEGED,
     Permission.POLICY_GLOBAL,
+    Permission.BREAK_GLASS,
     Permission.AUDIT_READ_ALL,
 }
 

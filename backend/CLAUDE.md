@@ -26,3 +26,11 @@ Code lives in `src/sentinel_ai/`: `api/` (routes, thin) → `services/` (applica
 - Every new protected route depends on `api.deps.require_permission(...)` (role) and, for project-scoped routes, `require_project_access(level)` (scope); both must allow. Never read the session cookie directly.
 - Uploaded archives are validated by `services/archive.py` and read only through bounded reads; never extract them to disk or execute/import anything from them. Storage keys are server-generated (`services/artifact_store.py`).
 - Look up child resources (sources, analyses, ...) with `project_id`; an id alone is never proof of access.
+
+## Plans, approvals and policy rules (Stage 6)
+- Test plans come only from `services/check_catalog.py`; never accept a command, risk level or approval flag from a request or a prompt. Risk and approval need are computed server-side (`services/policy.py`).
+- Who may decide an approval is decided only by `services/policy.py` (`eligibility_denial`, `authorization_decision_denial`): explicit project grant, not the requester, org role bound for high/critical, project-designated approvers or managers. Never branch on roles in routes, and never give any role (Super Admin included) implicit project access: plans, runs, results and logs are reachable only through the project grant, or a Super Admin's audited, read-only, time-limited break-glass grant (`services/break_glass.py`). Break-glass is never used for decisions (`resolve_explicit_access`) and every request it serves is audited (`authorize_project` / `require_project_access` do this; use them). A refused decision must be audited before the error (`approvals._deny`).
+- A submitted plan is frozen by DB triggers (migration 0003) and by `content_hash`; do not add code paths that edit planned tests after submit. Execution status is the only column that may change.
+- Remote targets pass `authorizations.gate_reason` at plan time, at submit, and again in the worker before running (Stage 7). Production stays blocked unless the global policy and a Super Admin four-eyes authorization allow it.
+- Routes addressed by plan/approval id (no `project_id` in the path) must authorize through `project_access.authorize_project` from the row's own project.
+

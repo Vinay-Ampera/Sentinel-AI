@@ -66,3 +66,17 @@ Before upgrading, inspect existing objects (read-only):
 
 ## Migration notes
 Models/ORM mappings are not part of Stage 2; Stage 3/4 add SQLAlchemy models and must be checked against this schema (the integration tests in `backend/tests/integration/test_migrations.py` pin the table sets and key constraints).
+
+## Migration 0003 - plan integrity (Stage 6)
+Additive only; applies on top of 0002 without touching existing rows. Apply with `alembic upgrade head` after reviewing `alembic upgrade 0002_public_application_schema:0003_plan_integrity --sql`.
+- `test_plans`: `content_sha256` (hash of the reviewed content), `policy_snapshot`, `submitted_by`, `submitted_at`; a plan that is not `draft`/`rejected`/`superseded` must carry all four (`test_plans_frozen_is_bound`).
+- `target_authorizations.justification` (10-2000 chars).
+- `approvals_no_self_approval_high_risk`: a high/critical approval cannot be approved by its requester. Trigger `approvals_final`: a decided approval and its subject are immutable.
+- Trigger `test_plans_guard`: contents of a non-draft plan are immutable; status moves only draft -> pending_approval|approved|superseded, pending_approval -> approved|rejected|superseded, approved|rejected -> superseded.
+- Trigger `planned_tests_guard`: tests of a non-draft plan cannot be inserted, deleted or changed except for `status` (execution progress).
+- Trigger `test_runs_plan_guard`: a run may only reference an **approved plan of the same project**, which is how a run is tied to the exact approved snapshot (the Stage 7 run-creation code must set `plan_id` to it and re-check the target gate in the worker).
+Plan-level approvals only: `approvals.planned_test_id` is not used yet.
+
+## Migration 0004 - break-glass grants (Stage 6 follow-up)
+Additive: one table, `public.break_glass_grants (id, project_id, user_id, justification 20-2000 chars, created_at, expires_at, revoked_at, revoked_by)`. CHECKs: `expires_at > created_at` and at most 4 hours; revoke columns set together. Trigger `break_glass_guard`: the project, user, justification, window and an existing revocation cannot be changed - the only allowed update is revoking an open grant, so a grant can neither be extended nor rewritten. Expiry is evaluated with the database clock. Apply after 0003 with `alembic upgrade head` (review: `alembic upgrade 0003_plan_integrity:0004_break_glass --sql`). Not yet applied to the real database.
+

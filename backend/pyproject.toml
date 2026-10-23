@@ -49,6 +49,10 @@ pythonpath = ["src", "tests"]
 "tests/integration/**" = ["E501"]
 # Dense detection tables and one-line gap definitions read better unwrapped.
 "src/sentinel_ai/services/analyzer.py" = ["E501"]
+"src/sentinel_ai/services/check_catalog.py" = ["E501"]
+"src/sentinel_ai/services/authorizations.py" = ["E501"]
+"src/sentinel_ai/services/plans.py" = ["E501"]
+"src/sentinel_ai/services/approvals.py" = ["E501"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI dependency declarations in signatures are idiomatic, not mutable defaults.

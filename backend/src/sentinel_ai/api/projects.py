@@ -279,8 +279,9 @@ def get_analysis(
     analysis_id: uuid.UUID,
     principal: Principal = Depends(current_principal),
     db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(request_context),
 ) -> SnapshotOut:
-    snapshot = service.get_snapshot(db, principal.user, analysis_id)
+    snapshot = service.get_snapshot(db, ctx, principal.user, analysis_id)
     if snapshot is None:  # unknown and inaccessible look the same
         raise DomainError(404, "not_found", "Analysis not found")
     return SnapshotOut.from_record(snapshot)

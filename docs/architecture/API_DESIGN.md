@@ -68,20 +68,32 @@ All errors:
 | `GET/PUT/DELETE /projects/{id}/members/{user_id}` `{access_level}` | Project membership | manage |
 | `POST /projects/{id}/sources/zip?name=` — raw `application/zip` body (implemented, Stage 5; multipart deferred, Q38). `POST /projects/{id}/sources` JSON for `git_repository` `{git_url,git_ref?}`, `localhost_url` `{target_url}`, `remote_url` `{target_url,environment}` (implemented: descriptor only, strict validation, nothing contacted, production refused; analysis of these types waits for Stage 6/8, Q36) | Register input source | manage |
 | `GET /projects/{id}/sources`, `DELETE /projects/{id}/sources/{sid}` | List / deactivate | read / manage |
-| `POST /projects/{id}/sources/{sid}/authorizations` `{environment,scope{hosts,paths,methods},allowed_risk,valid_from,valid_until,justification}` → `202` | Request authorization for a remote target | manage |
-| `POST /authorizations/{aid}/decision` `{decision,note}` | Approve/reject (not by requester; production needs S + policy enabled) | A S |
+| `POST /projects/{id}/sources/{sid}/authorizations` `{environment,paths[],methods[],allowed_risk[],valid_from?,valid_until,justification}` → `201` (**implemented, Stage 6**) | Request authorization for a `remote_url` source (localhost needs none). Hosts are fixed by the source; `environment` must match it; window ≤ 30 days (≤ 24 h production); `allowed_risk` ⊆ low/medium/high; production → `403 policy_blocked` unless the global policy allows it. Creates a `pending` authorization **and** an approval row | manage |
+| `GET /projects/{id}/authorizations` | List with `in_effect` (approved and inside its window now) | read |
+| `POST /projects/{id}/authorizations/{aid}/revoke` | Revoke an approved authorization (effective for the next gate check) | manage |
+| Decision | Authorizations are decided through `POST /approvals/{id}/decision` (single code path; there is no separate `/authorizations/{aid}/decision`). Not by the requester; production needs Super Admin + policy flag + reason ≥ 10 chars | A S |
 | `POST /projects/{id}/analyses` `{source_id}` → `201 analysis_snapshot` (synchronous static analysis of a ZIP source until Stage 7 makes it `202`; Q37) | Analyze source (read-only; nothing is executed or extracted) | run |
 | `GET /projects/{id}/analyses`, `GET /analyses/{id}` | Snapshots | read |
 
-### Test plans and approvals
+### Break-glass access (implemented, Stage 6 follow-up)
 | Method & path | Purpose | Level |
 |---|---|---|
-| `POST /projects/{id}/test-plans` `{snapshot_id?, mode: automatic|prompt_based|developer_defined, prompt?, tests?[]}` → `201`/`202` | Create plan (recommendations / prompt-driven / developer-defined). Developer-defined `tests[]` reference tool adapters + definition or an uploaded `script` artifact; never raw shell | run |
-| `GET /projects/{id}/test-plans`, `GET /test-plans/{id}` | List/get with planned tests, risk, approval status, rationale | read |
-| `PATCH /test-plans/{id}` | Edit while `draft` (add/remove/reorder tests) | run |
-| `POST /test-plans/{id}/submit` | `draft → pending_approval` (or `approved` automatically if every test is low risk and policy allows) | run |
-| `POST /approvals/{id}/decision` `{decision: approved|rejected, reason}` | Decide an approval; requester cannot self-approve high/critical | A S (D only if policy delegates `low`/`medium`) |
-| `GET /approvals?status=pending` | Approval inbox (scoped) | A S |
+| `POST /projects/{id}/break-glass` `{justification, minutes?}` → `201` | Temporary READ-only access to the project for the calling Super Admin (5-240 min, one active grant, no extension) | S |
+| `GET /projects/{id}/break-glass` | Who had emergency access, why, until when | manage |
+| `POST /projects/{id}/break-glass/{gid}/revoke` | End it now | grantee or manage |
+
+### Test plans and approvals (implemented, Stage 6)
+| Method & path | Purpose | Level |
+|---|---|---|
+| `POST /projects/{id}/test-plans` `{mode: automatic|prompt_based|developer_defined, snapshot_id?, prompt?, tests?[{check_id, source_id?, name?, parameters?, script_artifact_id?}]}` → `201` | Create a **draft**. Every test comes from the check catalog; there is no field for a command, risk level or approval flag. Each test is `planned`, `skipped` (not applicable), `deferred` (prerequisite missing) or `blocked` (policy / target not authorized), always with a rationale. Rate limited (429) | run |
+| `GET /projects/{id}/test-plans`, `GET /test-plans/{id}` | List / get with tests, risk, approval, `content_sha256`, `policy_snapshot`, and `execution_available:false` while no runner exists, and `viewer_can_approve` (UI hint; the decision endpoint re-checks) | read |
+| `PATCH /test-plans/{id}` `{summary?, remove_test_ids?[], add_tests?[]}` | Edit while `draft` only; risk and approval need are always recomputed server-side | run |
+| `POST /test-plans/{id}/submit` | Freeze a draft: re-check target gates, recompute approval need under the current policy, bind a SHA-256 of the reviewed content. → `approved` automatically if no runnable test needs a human, else `pending_approval` with an approval. `422 no_runnable_tests` if nothing can run | run |
+| `POST /approvals/{id}/decision` `{decision: approved|rejected, reason?}` | Decide a plan or authorization approval. Authority comes from `services/policy.py`: explicit project grant, not the requester, org role bound for high/critical, and the project's designated approvers (default: project managers). Reason ≥ 10 chars to approve high/critical. The requester may *reject* (withdraw) their own plan. Refusals are audited as `approval.denied`. Decided approvals are final (`409`) | any eligible project member |
+| `GET /approvals?status=pending|approved|rejected|all` | Inbox: for `pending`, only items the caller could approve now | any signed-in user, scoped |
+| `GET /projects/{id}/policy` | Effective approval policy incl. `risk_definitions` | read |
+| `GET/PUT /admin/policies[/{key}]` `{value}` | Organization keys: `production_testing`, `approval_required_risk_levels`, `allowed_risk_levels`, `high_risk_approver_roles` (subset of developer/admin/super_admin; default admin+super_admin) | S |
+| `GET/PUT /projects/{id}/policies[/{key}]` `{value}` | Project keys: `production_testing` (false only), `approval_required_risk_levels`, `allowed_risk_levels`, `risk_approvers` (`{level:[user ids]}`; designees must be active project members, and for high/critical hold an org-allowed role) | manage (any role) |
 
 ### Runs, batches, results
 | Method & path | Purpose | Level |

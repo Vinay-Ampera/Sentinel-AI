@@ -200,26 +200,31 @@ def test_member_management_rules(penv: Env) -> None:
     )
 
 
-def test_admin_has_no_implicit_access_and_super_admin_access_is_audited(penv: Env) -> None:
+def test_no_role_grants_implicit_access_to_a_project(penv: Env) -> None:
     owner = signed_in(penv, penv.make_user())
     pid = mk_project(owner)
     admin = signed_in(penv, penv.make_user("admin"))
     sa = signed_in(penv, penv.make_user("super_admin"))
-    assert admin.request("GET", f"{API}/projects/{pid}").status_code == 404
-    assert admin.request("GET", f"{API}/projects").json()["items"] == []
+    for who in (admin, sa):
+        assert who.request("GET", f"{API}/projects/{pid}").status_code == 404
+        assert who.request("GET", f"{API}/projects/{pid}/sources").status_code == 404
+        assert who.request("GET", f"{API}/projects/{pid}/analyses").status_code == 404
+        assert who.request("GET", f"{API}/projects").json()["items"] == []
+    # Access arrives only through an explicit grant, and then it is exactly that grant.
+    sa_id = penv.pg.execute(
+        "SELECT id FROM app_user.users WHERE role_name = 'super_admin'"
+    ).fetchone()
+    assert sa_id
+    assert (
+        owner.request(
+            "PUT", f"{API}/projects/{pid}/members/{sa_id[0]}", json={"access_level": "read"}
+        ).status_code
+        == 204
+    )
     assert sa.request("GET", f"{API}/projects/{pid}").status_code == 200
+    assert sa.request("PATCH", f"{API}/projects/{pid}", json={"name": "x"}).status_code == 403
     assert [p["id"] for p in sa.request("GET", f"{API}/projects").json()["items"]] == [pid]
-    assert (
-        count(
-            penv,
-            "SELECT count(*) FROM public.audit_events WHERE action = 'project.privileged_access'",
-        )
-        == 1
-    )
-    assert (
-        count(penv, "SELECT count(*) FROM public.audit_events WHERE action = 'project.list_all'")
-        == 1
-    )
+    assert count(penv, "SELECT count(*) FROM public.audit_events WHERE action IN ('project.privileged_access', 'project.list_all')") == 0  # fmt: skip
 
 
 # ---- upload validation ------------------------------------------------------------------

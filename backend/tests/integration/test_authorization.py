@@ -282,7 +282,7 @@ def test_team_access_and_team_ownership(project_env: Env) -> None:
     assert _probe(out_s, "read", shared) == 404
 
 
-def test_admin_has_no_implicit_global_access_but_super_admin_does(project_env: Env) -> None:
+def test_neither_admin_nor_super_admin_has_implicit_project_access(project_env: Env) -> None:
     env = project_env
     owner, admin, sa = (
         env.make_user("developer"),
@@ -291,8 +291,8 @@ def test_admin_has_no_implicit_global_access_but_super_admin_does(project_env: E
     )
     project = _project(env, owner)
     assert _probe(signed_in(env, admin), "read", project) == 404
-    assert _probe(signed_in(env, sa), "manage", project) == 200
-    assert _probe(signed_in(env, sa), "read", str(uuid.uuid4())) == 404  # still nothing to see
+    assert _probe(signed_in(env, sa), "read", project) == 404
+    assert _probe(signed_in(env, sa), "read", str(uuid.uuid4())) == 404  # same answer
 
 
 def test_role_and_project_access_must_both_allow(project_env: Env) -> None:
