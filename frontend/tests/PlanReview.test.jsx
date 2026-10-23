@@ -41,8 +41,7 @@ const plan = (over = {}) => ({
   ],
   counts: { planned: 1, deferred: 1, skipped: 1 },
   approval: null,
-  execution_available: false,
-  notice: 'Planning only: no test runner is connected yet, so nothing has been executed.',
+  notice: 'Reviewing or approving a plan does not run anything. An approved plan can be started under Test runs; what actually ran, and how it ended, is shown there.',
   ...over,
 })
 
@@ -58,7 +57,7 @@ describe('PlanReview', () => {
   it('shows a loading state, then every check with its status and reason, without implying results', async () => {
     render(<PlanReview api={fakeApi()} planId="p1" user={{ id: 'u1', role: 'developer' }} />)
     expect(screen.getByRole('status').textContent).toMatch(/loading/i)
-    expect(await screen.findByText(/nothing has been executed/)).toBeTruthy()
+    expect(await screen.findByText(/does not run anything/)).toBeTruthy()
     expect(screen.getByRole('group', { name: 'Planned' })).toBeTruthy()
     expect(screen.getByRole('group', { name: 'Unavailable' })).toBeTruthy()
     expect(screen.getByRole('group', { name: 'Not applicable' })).toBeTruthy()

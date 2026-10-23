@@ -26,7 +26,7 @@ EXPECTED_PUBLIC = {
     "planned_tests", "approvals", "test_runs", "test_batches", "test_results",
     "job_events", "findings", "finding_events", "finding_evidence",
     "verification_attempts", "regression_tests", "llm_usage", "policies",
-    "audit_events", "state_transitions", "test_batch_items",
+    "audit_events", "state_transitions", "test_batch_items", "test_case_results",
 }  # fmt: skip
 EXPECTED_APP_USER = {"roles", "users", "sessions", "password_reset_tokens"}
 
@@ -329,3 +329,83 @@ def test_ready_endpoint_end_to_end_on_disposable_database(conn: psycopg.Connecti
         assert body["status"] == "ready"
         assert body["checks"]["database"] == "ok" and body["checks"]["migrations"] == "ok"
         assert _dsn().split("@")[0].split("//")[1] not in str(body)
+
+
+def _result_with_case(conn: psycopg.Connection, s: _Seed) -> tuple[object, object]:
+    plan = conn.execute(
+        "INSERT INTO public.test_plans (project_id, version, plan_mode, created_by) "
+        "VALUES (%s, 1, 'automatic', %s) RETURNING id",
+        (s.project, s.user),
+    ).fetchone()[0]  # type: ignore[index]
+    test = conn.execute(  # while the plan is still a draft (approved plans are frozen)
+        "INSERT INTO public.planned_tests (plan_id, ordinal, name, category, tool, origin, "
+        "risk_level, definition) VALUES (%s, 1, 't', 'functional', 'pytest', 'recommended', "
+        "'low', '{}'::jsonb) RETURNING id",
+        (plan,),
+    ).fetchone()[0]  # type: ignore[index]
+    conn.execute(
+        "UPDATE public.test_plans SET status = 'approved', content_sha256 = repeat('a', 64), "
+        "policy_snapshot = '{}'::jsonb, submitted_by = %s, submitted_at = now() WHERE id = %s",
+        (s.user, plan),
+    )
+    run = conn.execute(
+        "INSERT INTO public.test_runs (project_id, plan_id, requested_by) VALUES (%s, %s, %s) RETURNING id",
+        (s.project, plan, s.user),
+    ).fetchone()[0]  # type: ignore[index]
+    batch = conn.execute(
+        "INSERT INTO public.test_batches (run_id, ordinal) VALUES (%s, 1) RETURNING id", (run,)
+    ).fetchone()[0]  # type: ignore[index]
+    result = conn.execute(
+        "INSERT INTO public.test_results (run_id, batch_id, planned_test_id, status) "
+        "VALUES (%s, %s, %s, 'not_run') RETURNING id",
+        (run, batch, test),
+    ).fetchone()[0]  # type: ignore[index]
+    return run, result
+
+
+def test_not_run_and_test_case_rules(conn: psycopg.Connection, seed: _Seed) -> None:
+    """Migration 0006: ``not_run`` is a result state; cases are bounded and attached to a result."""
+    run, result = _result_with_case(conn, seed)
+    ok = (
+        "INSERT INTO public.test_case_results (result_id, run_id, ordinal, name, status) "
+        "VALUES (%s, %s, %s, %s, %s)"
+    )
+    conn.execute(ok, (result, run, 1, "test_a", "passed"))
+    _expect(conn, errors.UniqueViolation, ok, (result, run, 1, "dup", "passed"))
+    _expect(conn, errors.CheckViolation, ok, (result, run, 2, "x", "blocked"))  # not a case state
+    _expect(conn, errors.CheckViolation, ok, (result, run, 0, "x", "passed"))
+    _expect(conn, errors.CheckViolation, ok, (result, run, 3, "", "passed"))
+    _expect(conn, errors.CheckViolation, ok, (result, run, 3, "n" * 501, "passed"))
+    too_long = "INSERT INTO public.test_case_results (result_id, run_id, ordinal, name, status, detail) VALUES (%s, %s, 4, 'n', 'failed', %s)"
+    _expect(conn, errors.CheckViolation, too_long, (result, run, "d" * 10001))
+    _expect(
+        conn, errors.CheckViolation,
+        "UPDATE public.test_results SET status = 'unknown' WHERE id = %s", (result,),
+    )  # fmt: skip
+    conn.execute("DELETE FROM public.test_results WHERE id = %s", (result,))
+    left = conn.execute(
+        "SELECT count(*) FROM public.test_case_results WHERE run_id = %s", (run,)
+    ).fetchone()
+    assert left == (0,)  # cases go with their result
+
+
+def test_downgrading_0006_keeps_results_and_maps_not_run(conn: psycopg.Connection) -> None:
+    _alembic("upgrade", "head")
+    conn.autocommit = False
+    try:
+        seed = _Seed(conn)
+        _, result = _result_with_case(conn, seed)
+        conn.commit()
+    finally:
+        conn.autocommit = True
+    try:
+        _alembic("downgrade", "0005_job_queue")
+        assert conn.execute("SELECT status FROM public.test_results WHERE id = %s", (result,)).fetchone() == ("skipped",)  # fmt: skip
+        assert "test_case_results" not in _tables(conn, "public")
+        with pytest.raises(errors.CheckViolation):  # autocommit connection: no savepoint needed
+            conn.execute(
+                "UPDATE public.test_results SET status = 'not_run' WHERE id = %s", (result,)
+            )
+    finally:
+        _alembic("upgrade", "head")
+        conn.execute("TRUNCATE app_user.users, public.projects CASCADE")

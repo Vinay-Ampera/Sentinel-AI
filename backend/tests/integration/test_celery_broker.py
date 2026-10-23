@@ -230,3 +230,57 @@ def test_real_worker_process_runs_the_smoke_check_in_a_docker_sandbox(
     ]
     assert sql(e, "SELECT count(*) FROM public.artifacts WHERE run_id = %s", run_id)[0][0] == 3
     assert left == []
+
+
+def test_real_worker_process_runs_a_pytest_plan_when_project_code_is_enabled(
+    make_env: Callable[..., object],  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """Redis -> separate Celery worker (JOB_EXECUTOR=docker + the project-code opt-in) ->
+    pytest in the sandbox -> stored cases and evidence."""
+    from test_plans_api import API, ZIP, dev_plan, new_project, submit, user
+    from test_runs_jobs import sql, start
+
+    from sentinel_ai.execution.docker_runner import DockerRunner
+    from sentinel_ai.jobs.celery_app import CeleryEnqueuer
+    from support import make_zip
+
+    runner = DockerRunner(f"celery9-{uuid.uuid4().hex[:8]}")
+    if not (runner.available() and runner.image_exists("sentinel-sandbox-runner:stage8")):
+        pytest.skip("Docker or the sandbox runner image is not available")
+    queue = f"pt-{uuid.uuid4().hex[:8]}"
+    e = make_env(  # type: ignore[operator]
+        redis_url=TEST_REDIS_URL, job_queue_name=queue, job_executor="docker",
+        sandbox_scope=runner.scope, sandbox_allow_project_code=True, sandbox_accept_shared_kernel=True,
+    )  # fmt: skip
+    e.app.state.enqueue = CeleryEnqueuer(e.app.state.settings)
+    dev, s = user(e)
+    pid = new_project(s)
+    files = {"calc.py": "def add(a,b): return a+b\n", "tests/test_calc.py": "import calc\ndef test_add(): assert calc.add(1,2)==3\ndef test_bad(): assert False\n"}  # fmt: skip
+    src = s.request("POST", f"{API}/projects/{pid}/sources/zip", params={"name": "code"}, content=make_zip(files), headers=ZIP).json()["id"]  # fmt: skip
+    s.request("POST", f"{API}/projects/{pid}/analyses", json={"source_id": src})
+    plan = dev_plan(s, pid, [{"check_id": "pytest_unit", "source_id": src}]).json()["id"]
+    assert submit(s, plan).json()["status"] == "approved"
+
+    worker = _worker(
+        "sentinel_ai.jobs.worker", queue,
+        {"JOB_EXECUTOR": "docker", "SANDBOX_SCOPE": runner.scope, "ARTIFACT_STORAGE_DIR": str(tmp_path),
+         "SANDBOX_ALLOW_PROJECT_CODE": "true", "SANDBOX_ACCEPT_SHARED_KERNEL": "true"},
+    )  # fmt: skip
+    try:
+        run_id = start(s, pid, plan).json()["id"]
+        deadline = time.time() + 90
+        status = "queued"
+        while time.time() < deadline and status not in ("completed", "failed", "cancelled"):
+            time.sleep(0.5)
+            status = sql(e, "SELECT status FROM public.test_runs WHERE id = %s", run_id)[0][0]
+    finally:
+        worker.terminate()
+        worker.wait(timeout=20)
+        left = runner._ids() or []
+        if left:
+            runner._docker("rm", "-f", "-v", *left)
+    assert status == "completed" and left == []
+    assert sql(e, "SELECT status, summary FROM public.test_results WHERE run_id = %s", run_id) == [("failed", "pytest: 1 passed, 1 failed.")]  # fmt: skip
+    assert sorted(r[0] for r in sql(e, "SELECT status FROM public.test_case_results WHERE run_id = %s", run_id)) == ["failed", "passed"]  # fmt: skip
+    assert sql(e, "SELECT count(*) FROM public.artifacts WHERE run_id = %s", run_id)[0][0] == 4

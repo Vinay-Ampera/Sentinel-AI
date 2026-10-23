@@ -27,4 +27,5 @@ beat:
 	poetry run celery -A sentinel_ai.jobs.worker beat -l INFO
 
 sandbox-image:
+	poetry run python ../sandbox/vendor.py
 	docker build -t sentinel-sandbox-runner:stage8 ../sandbox

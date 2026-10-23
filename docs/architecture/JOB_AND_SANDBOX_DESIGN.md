@@ -77,5 +77,11 @@ Docker is not a complete boundary against hostile code. Evaluate rootless Docker
 - Evidence per test: `stdout.log`, `stderr.log` (`log`), `manifest.json` (`report`: limits, image id, container configuration as the daemon reports it, exit state, durations). Stored under `projects/{project}/runs/{run}/results/{result}/` with SHA-256 in `artifacts`.
 - Cancel/timeout: `should_stop` is polled every 0.5 s (also renews the lease); the container is killed and removed; a host deadline (timeout + 5 s) covers a frozen in-container runner. Lost or stuck workers: the reconciler calls `terminate(batch)` and the janitor sweeps leaked containers by age within the deployment scope.
 
-## Remaining TODO (Stage 9+)
-Real test runners and result-file collection, allow-listed egress / dependency path, localhost target reach (Q26), artifact download and authorization, stronger runtime for project code (Q59).
+## Running a project's tests (implemented in Stage 9; ADR-0006)
+- `pytest_unit` is in the fixed command table with `runs_project_code=True`: it is `blocked` (no container) unless `SANDBOX_ALLOW_PROJECT_CODE` is set. The in-image runner prints the JUnit file as a nonce-framed block at the end of stdout; the host keeps a stdout tail buffer, takes the last valid frame, parses it defensively (`execution/junit.py`) and stores cases in `test_case_results`.
+- Status mapping for pytest: exit 0 `passed`, 1 `failed`, 5 `skipped` (no tests), other `error`; infrastructure states as before. A report can never change the status.
+- The worker re-checks ownership after every execution, records a test that hit its own timeout and continues with the next one, writes explicit `not_run` results for tests that never started, and stores cases then evidence (never losing the committed result).
+- API: `GET /test-runs/{run}/results/{result}` (result + cases + evidence descriptors), `GET /artifacts/{id}/content` (run evidence only), progress includes `cases_by_status`.
+
+## Remaining TODO (Stage 10+)
+Dependency path for projects with third-party imports (Q66), allow-listed egress and localhost-target reach (Q26/Q60), browser tests (Playwright, Q69), JavaScript runners, evidence retention (Q70), stronger runtime tested for real (Q59).

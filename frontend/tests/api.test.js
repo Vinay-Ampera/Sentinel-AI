@@ -38,4 +38,37 @@ describe('api client', () => {
     fetch.mockImplementation(() => json(200, { id: 'p' }))
     await expect(api.getPlan('x')).rejects.toMatchObject({ code: 'bad_response' })
   })
+
+  it('starts a run with an idempotency key and the CSRF token', async () => {
+    fetch.mockImplementation(() => json(200, { user: { id: 'u', role: 'developer' }, csrf_token: 'tok' }))
+    await api.login('a@example.com', 'pw')
+    fetch.mockImplementation(() => json(202, { id: 'r', status: 'queued', plan_id: 'p', progress: { tests_total: 2, tests_finished: 0 } }))
+    const run = await api.createRun('proj', 'p', 'key-12345678')
+    expect(run.status).toBe('queued')
+    const [url, init] = fetch.mock.calls[1]
+    expect(url).toBe('/api/v1/projects/proj/test-runs')
+    expect(init.headers['Idempotency-Key']).toBe('key-12345678')
+    expect(init.headers['X-CSRF-Token']).toBe('tok')
+    expect(JSON.parse(init.body)).toEqual({ plan_id: 'p' })
+  })
+
+  it('rejects malformed run and result responses at the boundary', async () => {
+    fetch.mockImplementation(() => json(200, { id: 'r' }))
+    await expect(api.getRun('r')).rejects.toMatchObject({ code: 'bad_response' })
+    fetch.mockImplementation(() => json(200, [{ id: 'x' }]))
+    await expect(api.listRunResults('r')).rejects.toMatchObject({ code: 'bad_response' })
+    fetch.mockImplementation(() => json(200, { id: 'x', status: 'passed', planned_test_id: 't' }))
+    await expect(api.getRunResult('r', 'x')).rejects.toMatchObject({ code: 'bad_response' }) // no cases/evidence
+  })
+
+  it('reads evidence as text, shortened, and reports errors', async () => {
+    fetch.mockImplementation(() => Promise.resolve(new Response('x'.repeat(300000), { status: 200 })))
+    const ev = await api.getEvidenceText('a1')
+    expect(ev.text.length).toBe(200000)
+    expect(ev.truncated).toBe(true)
+    expect(fetch.mock.calls[0][0]).toBe('/api/v1/artifacts/a1/content')
+    expect(fetch.mock.calls[0][1].credentials).toBe('include')
+    fetch.mockImplementation(() => json(404, { error: { code: 'not_found', message: 'Evidence not found' } }))
+    await expect(api.getEvidenceText('a2')).rejects.toMatchObject({ status: 404, message: 'Evidence not found' })
+  })
 })

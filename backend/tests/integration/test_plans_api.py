@@ -118,7 +118,7 @@ def test_automatic_plan_explains_every_check_and_low_risk_plan_auto_approves(pen
     assert r.status_code == 201, r.text
     plan = r.json()
     assert plan["status"] == "draft" and plan["snapshot_id"] == snap_id and plan["version"] == 1
-    assert plan["execution_available"] is False and "nothing has been executed" in plan["notice"]
+    assert "execution_available" not in plan and "does not run anything" in plan["notice"]
     by_tool = {t["tool"]: t for t in plan["tests"]}
     assert by_tool["pytest"]["status"] == "planned"
     assert by_tool["pytest"]["prerequisites"] and by_tool["pytest"]["expected_evidence"]

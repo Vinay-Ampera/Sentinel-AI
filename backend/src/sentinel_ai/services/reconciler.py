@@ -119,7 +119,7 @@ def _recover_lost(
             detail={"attempt": batch.attempt, "sandbox_cleanup_confirmed": confirmed},
         )  # fmt: skip
         if batch.status == "cancel_requested":
-            job_state.mark_unrun(db, run, batch, "cancelled", "Not run: the run was cancelled.")
+            job_state.mark_unrun(db, run, batch, "not_run", "Not run: the run was cancelled.")
             job_state.batch_to(
                 db, batch, "cancelled", finish=True,
                 error_code="worker_lost_during_cancel",
@@ -137,7 +137,7 @@ def _recover_lost(
         ):  # fmt: skip
             report.recovered += 1
         else:
-            job_state.mark_unrun(db, run, batch, "skipped", "Not run: the worker was lost.")
+            job_state.mark_unrun(db, run, batch, "not_run", "Not run: the worker was lost.")
             job_state.batch_to(
                 db, batch, "failed", finish=True, error_code="worker_lost",
                 error_summary="The worker stopped responding and no retries remain.",
@@ -155,7 +155,7 @@ def _time_out_overruns(
         if batch is None or run is None or batch.status != "running":
             continue
         _cleanup(cleanup, batch.id)
-        job_state.mark_unrun(db, run, batch, "skipped", "Not run: the batch timed out.")
+        job_state.mark_unrun(db, run, batch, "not_run", "Not run: the batch timed out.")
         job_state.batch_to(
             db, batch, "timed_out", event_type="timeout", finish=True, error_code="timeout",
             error_summary="The batch exceeded its time limit and its worker did not stop it.",
@@ -173,7 +173,7 @@ def _settle_unconfirmed_cancels(
         if batch is None or run is None or batch.status != "cancel_requested":
             continue
         _cleanup(cleanup, batch.id)
-        job_state.mark_unrun(db, run, batch, "cancelled", "Not run: the run was cancelled.")
+        job_state.mark_unrun(db, run, batch, "not_run", "Not run: the run was cancelled.")
         job_state.batch_to(
             db, batch, "failed", finish=True, error_code="cancel_unconfirmed",
             error_summary="Cancellation was requested but no termination was confirmed in time.",
@@ -190,10 +190,11 @@ def _time_out_runs(db: Session, settings: Settings, report: ReconcileReport) -> 
         waited = run.started_at is None
         for batch in runs.list_batches(db, run_id, for_update=True):
             if batch.status in ("queued", "blocked"):
+                job_state.mark_unrun(db, run, batch, "not_run", "Not run: the run timed out.")
                 job_state.batch_to(db, batch, "cancelled", finish=True,
                                    detail={"reason": "run timed out"})  # fmt: skip
             elif batch.status in runs.CLAIMED:
-                job_state.mark_unrun(db, run, batch, "skipped", "Not run: the run timed out.")
+                job_state.mark_unrun(db, run, batch, "not_run", "Not run: the run timed out.")
                 job_state.batch_to(
                     db, batch, "timed_out", event_type="timeout", finish=True,
                     error_code="run_timeout",

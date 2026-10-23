@@ -9,7 +9,7 @@ neither start nor cancel one.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from sentinel_ai.api.deps import (
@@ -23,6 +23,7 @@ from sentinel_ai.schemas.runs import (
     BatchOut,
     CreateRunRequest,
     EventOut,
+    ResultDetailOut,
     ResultOut,
     RunOut,
 )
@@ -121,6 +122,52 @@ def list_results(
 ) -> list[ResultOut]:
     rows = service.list_results(db, ctx, principal.user, run_id, status)
     return [ResultOut.of(r) for r in rows]
+
+
+@router.get("/test-runs/{run_id}/results/{result_id}")
+def get_result(
+    run_id: uuid.UUID,
+    result_id: uuid.UUID,
+    principal: Principal = _VIEW_PRINCIPAL,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(request_context),
+) -> ResultDetailOut:
+    detail = service.get_result_detail(db, ctx, principal.user, run_id, result_id)
+    return ResultDetailOut.from_detail(detail)
+
+
+_DOWNLOAD_TYPES = {"text/plain; charset=utf-8", "application/json", "application/xml"}
+
+
+@router.get("/artifacts/{artifact_id}/content")
+def download_evidence(
+    artifact_id: uuid.UUID,
+    request: Request,
+    principal: Principal = _VIEW_PRINCIPAL,
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(request_context),
+) -> Response:
+    """Run evidence only (a log or report), authorized through the artifact's own project.
+    Always an attachment, never sniffed or rendered by the browser."""
+    record, data = service.read_evidence(
+        db, ctx, principal.user, request.app.state.settings, artifact_id
+    )
+    media = (
+        record.content_type
+        if record.content_type in _DOWNLOAD_TYPES
+        else "application/octet-stream"
+    )
+    filename = "".join(ch for ch in (record.filename or "evidence") if ch.isalnum() or ch in "._-")
+    return Response(
+        content=data,
+        media_type=media,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename or "evidence"}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
 
 
 @router.get("/test-runs/{run_id}/events")

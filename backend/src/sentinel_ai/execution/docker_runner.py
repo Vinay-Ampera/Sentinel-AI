@@ -31,6 +31,7 @@ from sentinel_ai.execution.sandbox_spec import (
 
 logger = logging.getLogger(__name__)
 
+RESULT_TAIL_BYTES = 3 * 1024 * 1024  # base64 of the largest framed result file, with margin
 POLL_SECONDS = 0.5
 HOST_GRACE_SECONDS = 5  # the host kills a little after the in-container timeout fires
 COMMAND_TIMEOUT = 30
@@ -50,6 +51,7 @@ class SandboxResult:
     stderr: bytes = b""
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    stdout_tail: bytes = b""  # the last bytes of stdout, where the result frame is written
     duration_ms: int = 0
     image_id: str | None = None
     host_config: dict[str, Any] = field(default_factory=dict)
@@ -60,11 +62,13 @@ class _BoundedReader(threading.Thread):
     """Reads a pipe to the end, keeping at most ``cap`` bytes (the rest is discarded so the
     container never blocks on a full pipe)."""
 
-    def __init__(self, stream: Any, cap: int) -> None:
+    def __init__(self, stream: Any, cap: int, tail_cap: int = 0) -> None:
         super().__init__(daemon=True)
         self._stream = stream
         self._cap = cap
+        self._tail_cap = tail_cap
         self.data = bytearray()
+        self.tail = bytearray()
         self.truncated = False
 
     def run(self) -> None:
@@ -75,6 +79,10 @@ class _BoundedReader(threading.Thread):
                     self.data += chunk[:room]
                 if len(chunk) > room:
                     self.truncated = True
+                if self._tail_cap:
+                    self.tail += chunk
+                    if len(self.tail) > self._tail_cap:
+                        del self.tail[: len(self.tail) - self._tail_cap]
         except (OSError, ValueError):
             pass
 
@@ -154,7 +162,9 @@ class DockerRunner:
         except OSError:
             result.start_error = "the sandbox container could not be started"
             return
-        out_reader, err_reader = _BoundedReader(proc.stdout, cap), _BoundedReader(proc.stderr, cap)
+        tail_cap = RESULT_TAIL_BYTES if spec.result_file else 0
+        out_reader = _BoundedReader(proc.stdout, cap, tail_cap)
+        err_reader = _BoundedReader(proc.stderr, cap)
         out_reader.start()
         err_reader.start()
 
@@ -195,6 +205,7 @@ class DockerRunner:
         out_reader.join(timeout=5)
         err_reader.join(timeout=5)
         result.stdout, result.stderr = bytes(out_reader.data), bytes(err_reader.data)
+        result.stdout_tail = bytes(out_reader.tail)
         result.stdout_truncated, result.stderr_truncated = (
             out_reader.truncated,
             err_reader.truncated,

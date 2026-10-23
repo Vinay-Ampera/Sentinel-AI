@@ -47,3 +47,10 @@ Code lives in `src/sentinel_ai/`: `api/` (routes, thin) → `services/` (applica
 - Every container carries `sentinel.sandbox=1` and the deployment scope label; cleanup/sweep filters on both. Always remove in `finally`.
 - `JOB_EXECUTOR=stub` stays the default. Docker tests must use a unique scope and clean up only that scope.
 
+## Project-code and result rules (Stage 9)
+- A check that executes the project's code (`CheckCommand.runs_project_code`) must stay `blocked` unless `sandbox_allow_project_code` is set, and that setting must keep requiring a stronger runtime or an explicit shared-kernel acceptance (config validator + tests). Never relax these to make a test pass.
+- A runner's result file is untrusted data: parse only through `execution/junit.py` and `execution/frames.py`, never trust it for status (the exit state decides), and never store it unredacted.
+- Plan parameters reach a command only through the validators in `execution/commands.py`; add a validator and tests for every new parameter. No option may start with `-`.
+- Tests that never started get `not_run` results (`job_state.mark_unrun`); an executor that cannot start is `failed_to_start`, never `failed`.
+- Evidence is served only by `services/runs.read_evidence`: project grant via `authorize_project`, run evidence kinds only, hash re-check, audit, attachment headers. Do not add another download path.
+

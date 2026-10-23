@@ -695,8 +695,8 @@ This section lists only each stage's status, next action, requirements and accep
 - Risky or unauthorized targets are blocked before execution.
 
 ### Stage 9 — First QA execution path
-**Status:** Pending  
-**Next action:** Starts after Stage 8.
+**Status:** Completed  
+**Next action:** Owner review and commit; run `make -C backend sandbox-image` (now vendors pytest from the lock file); apply migrations 0003-0006 to the real database after review; decide on enabling `SANDBOX_ALLOW_PROJECT_CODE` per deployment (read the threat model first). Playwright was not started (needs browser sandboxing, Q69). Stage 10 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-24, Stage 9).
 
 **Work**
 - Integrate one initial test runner (recommended: pytest for Python projects).

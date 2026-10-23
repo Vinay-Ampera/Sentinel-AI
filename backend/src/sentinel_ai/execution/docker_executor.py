@@ -9,15 +9,21 @@ as skipped, and checks that need a network target are blocked, before anything s
 
 import io
 import logging
+import secrets
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 
 from sentinel_ai.core.config import Settings
-from sentinel_ai.execution import commands, evidence
+from sentinel_ai.execution import commands, evidence, frames, junit
 from sentinel_ai.execution.docker_runner import DockerRunner, SandboxResult
-from sentinel_ai.execution.interface import EvidenceItem, ExecutionOutcome, ExecutionRequest
-from sentinel_ai.execution.sandbox_spec import SandboxLimits, SandboxSpec
+from sentinel_ai.execution.interface import (
+    CaseResult,
+    EvidenceItem,
+    ExecutionOutcome,
+    ExecutionRequest,
+)
+from sentinel_ai.execution.sandbox_spec import RESULT_MAX_BYTES, SandboxLimits, SandboxSpec
 from sentinel_ai.services.archive import (
     ArchiveLimits,
     ArchiveRejected,
@@ -29,6 +35,7 @@ from sentinel_ai.services.artifact_store import ArtifactStore, sha256_bytes
 logger = logging.getLogger(__name__)
 
 EXIT_REJECTED = 70  # the in-container runner refused the archive
+PYTEST_NO_TESTS = 5
 
 
 class DockerSandboxExecutor:
@@ -37,6 +44,10 @@ class DockerSandboxExecutor:
         self._runner = runner or DockerRunner(settings.sandbox_scope, settings.sandbox_docker_bin)
         self._store = ArtifactStore(settings.artifact_root())
         self._secrets = evidence.secret_values(settings)
+        if settings.sandbox_allow_project_code and settings.sandbox_runtime is None:
+            logger.warning(
+                "project code runs under plain Docker (shared kernel): SANDBOX_ACCEPT_SHARED_KERNEL"
+            )
 
     # ---- Executor protocol -------------------------------------------------------------------
 
@@ -52,6 +63,16 @@ class DockerSandboxExecutor:
             return ExecutionOutcome(
                 "blocked", "Blocked: the sandbox has no network access, which this check needs."
             )
+        if command.runs_project_code and not self._settings.sandbox_allow_project_code:
+            return ExecutionOutcome(
+                "blocked",
+                "Blocked: running a project's own code is not enabled on this deployment.",
+            )
+        try:
+            argv = command.argv_for(request.parameters)
+            requested_timeout = commands.timeout_parameter(request.parameters)
+        except commands.InvalidParameters as exc:
+            return ExecutionOutcome("blocked", f"Blocked: {exc}.")
         archive: bytes | None = None
         if command.needs_workspace:
             loaded = self._load_archive(request)
@@ -61,9 +82,12 @@ class DockerSandboxExecutor:
         if should_stop():
             return ExecutionOutcome("cancelled", "Stopped before the sandbox started.")
 
-        spec = self._spec(request, command, extract=archive is not None)
+        nonce = secrets.token_hex(16) if command.result_file else None
+        spec = self._spec(
+            request, command, argv, requested_timeout, extract=archive is not None, nonce=nonce
+        )
         result = self._runner.run(spec, archive, should_stop)
-        return self._outcome(request, spec, result)
+        return self._outcome(request, spec, result, command, nonce)
 
     def terminate(self, batch_id: uuid.UUID) -> bool:
         return self._runner.cleanup_batch(batch_id)
@@ -74,15 +98,16 @@ class DockerSandboxExecutor:
 
     # ---- internals ---------------------------------------------------------------------------
 
-    def _limits(self, request: ExecutionRequest) -> SandboxLimits:
+    def _limits(self, request: ExecutionRequest, requested: int | None) -> SandboxLimits:
         s = self._settings
+        timeout = min(request.timeout_seconds, s.sandbox_test_timeout_seconds, requested or 10**9)
         return SandboxLimits(
             cpus=s.sandbox_cpus,
             memory_mb=s.sandbox_memory_mb,
             pids=s.sandbox_pids,
             workspace_mb=s.sandbox_workspace_mb,
             tmp_mb=s.sandbox_tmp_mb,
-            timeout_seconds=min(request.timeout_seconds, s.sandbox_test_timeout_seconds),
+            timeout_seconds=timeout,
             max_extract_mb=s.sandbox_max_extract_mb,
             max_file_mb=s.sandbox_max_file_mb,
             max_files=s.zip_max_files,
@@ -91,7 +116,14 @@ class DockerSandboxExecutor:
         )
 
     def _spec(
-        self, request: ExecutionRequest, command: commands.CheckCommand, *, extract: bool
+        self,
+        request: ExecutionRequest,
+        command: commands.CheckCommand,
+        argv: tuple[str, ...],
+        requested_timeout: int | None,
+        *,
+        extract: bool,
+        nonce: str | None,
     ) -> SandboxSpec:
         s = self._settings
         return SandboxSpec(
@@ -99,10 +131,12 @@ class DockerSandboxExecutor:
             scope=s.sandbox_scope,
             run_id=request.run_id,
             batch_id=request.batch_id,
-            command=command.argv,
-            limits=self._limits(request),
+            command=argv,
+            limits=self._limits(request, requested_timeout),
             extract_source=extract,
             runtime=s.sandbox_runtime,
+            result_file=command.result_file,
+            result_nonce=nonce,
         )
 
     def _load_archive(self, request: ExecutionRequest) -> bytes | ExecutionOutcome:
@@ -143,34 +177,129 @@ class DockerSandboxExecutor:
             )
         return data
 
+    # ---- turning the container's real state into a result -------------------------------------
+
+    def _clean(self, text: str | None) -> str | None:
+        if text is None:
+            return None
+        return evidence.redact(text.encode(), self._secrets).decode()
+
+    def _report(
+        self, command: commands.CheckCommand, nonce: str | None, r: SandboxResult
+    ) -> tuple[bytes | None, junit.ParsedReport | None, str | None]:
+        """(raw result file, parsed cases, problem). Only for runners that produce one."""
+        if not command.result_file or nonce is None:
+            return None, None, None
+        raw = frames.extract(r.stdout_tail or r.stdout, nonce, RESULT_MAX_BYTES)
+        if raw is None:
+            return None, None, "no result file was produced"
+        try:
+            return raw, junit.parse(raw), None
+        except junit.InvalidReport as exc:
+            return None, None, str(exc)
+
     def _outcome(
-        self, request: ExecutionRequest, spec: SandboxSpec, r: SandboxResult
+        self,
+        request: ExecutionRequest,
+        spec: SandboxSpec,
+        r: SandboxResult,
+        command: commands.CheckCommand,
+        nonce: str | None,
     ) -> ExecutionOutcome:
-        items = self._evidence(request, spec, r)
+        raw, report, problem = self._report(command, nonce, r)
+        items = self._evidence(request, spec, r, command, raw, report, problem)
+        cases = self._cases(report)
+        common = {"exit_code": r.exit_code, "duration_ms": r.duration_ms, "evidence": items, "cases": cases}  # fmt: skip
+
+        def out(status: str, summary: str) -> ExecutionOutcome:
+            return ExecutionOutcome(status, summary, **common)  # type: ignore[arg-type]
+
         if r.start_error:
             return ExecutionOutcome("failed_to_start", r.start_error, evidence=items)
         if r.cancelled:
-            return ExecutionOutcome("cancelled", "Stopped: the sandbox was terminated.", duration_ms=r.duration_ms, evidence=items)  # fmt: skip
+            return out("cancelled", "Stopped: the sandbox was terminated.")
         if r.timed_out:
-            return ExecutionOutcome("timed_out", "The sandbox exceeded its time limit and was terminated.", exit_code=r.exit_code, duration_ms=r.duration_ms, evidence=items)  # fmt: skip
+            return out("timed_out", "The sandbox exceeded its time limit and was terminated.")
         if r.oom_killed:
-            return ExecutionOutcome("error", "The sandbox exceeded its memory limit and was terminated.", exit_code=r.exit_code, duration_ms=r.duration_ms, evidence=items)  # fmt: skip
+            return out("error", "The sandbox exceeded its memory limit and was terminated.")
         if r.exit_code == EXIT_REJECTED:
-            return ExecutionOutcome("error", "The sandbox refused the source archive; see the log.", exit_code=r.exit_code, duration_ms=r.duration_ms, evidence=items)  # fmt: skip
+            return out("error", "The sandbox refused the source archive; see the log.")
+        if command.kind == "pytest":
+            return self._pytest_outcome(r, report, problem, out)
         if r.exit_code == 0:
-            return ExecutionOutcome("passed", "The sandbox command finished with exit code 0.", exit_code=0, duration_ms=r.duration_ms, evidence=items)  # fmt: skip
-        return ExecutionOutcome("failed", f"The sandbox command exited with code {r.exit_code}.", exit_code=r.exit_code, duration_ms=r.duration_ms, evidence=items)  # fmt: skip
+            return out("passed", "The sandbox command finished with exit code 0.")
+        return out("failed", f"The sandbox command exited with code {r.exit_code}.")
 
-    def _evidence(self, request: ExecutionRequest, spec: SandboxSpec, r: SandboxResult) -> tuple[EvidenceItem, ...]:  # fmt: skip
+    def _pytest_outcome(
+        self,
+        r: SandboxResult,
+        report: junit.ParsedReport | None,
+        problem: str | None,
+        out: Callable[[str, str], ExecutionOutcome],
+    ) -> ExecutionOutcome:
+        counts = report.counts() if report else {}
+        listing = ", ".join(
+            f"{counts[k]} {k}" for k in ("passed", "failed", "error", "skipped") if counts.get(k)
+        )
+        base = f"pytest: {listing}." if listing else f"pytest exited with code {r.exit_code}."
+        if report is None and problem:
+            base += f" ({problem})"
+        if report is not None and report.truncated:
+            base += f" Only the first {junit.MAX_CASES} cases were kept."
+        hint = ""
+        text = (r.stdout + r.stderr).decode("utf-8", errors="replace")
+        if "ModuleNotFoundError" in text or "No module named" in text:
+            hint = (
+                " Some code could not import a module: the sandbox is offline and has only the"
+                " standard library and pytest."
+            )
+        code = r.exit_code
+        if code == 0:
+            return out("passed", base)
+        if code == 1:
+            return out("failed", base + hint)
+        if code == PYTEST_NO_TESTS:
+            return out("skipped", "Not run: pytest collected no tests.")
+        return out("error", f"pytest could not complete (exit code {code}). {base}{hint}".strip())
+
+    def _cases(self, report: junit.ParsedReport | None) -> tuple[CaseResult, ...]:
+        if report is None:
+            return ()
+        return tuple(
+            CaseResult(
+                name=self._clean(c.name) or "(unnamed)",
+                status=c.status,
+                suite=self._clean(c.suite),
+                classname=self._clean(c.classname),
+                duration_ms=c.duration_ms,
+                message=self._clean(c.message),
+                detail=self._clean(c.detail),
+            )
+            for c in report.cases
+        )
+
+    def _evidence(
+        self,
+        request: ExecutionRequest,
+        spec: SandboxSpec,
+        r: SandboxResult,
+        command: commands.CheckCommand,
+        raw_report: bytes | None,
+        report: junit.ParsedReport | None,
+        problem: str | None,
+    ) -> tuple[EvidenceItem, ...]:
         s = self._settings
         cap = s.sandbox_output_cap_bytes
         lim = spec.limits
         manifest = {
-            "schema": 1,
+            "schema": 2,
             "check_id": request.check_id,
             "attempt": request.attempt,
+            "command": list(spec.command),
+            "project_code": command.runs_project_code,
             "image": spec.image,
             "image_id": r.image_id,
+            "runtime": spec.runtime or "default (runc)",
             "network": "none",
             "limits": {
                 "cpus": lim.cpus,
@@ -194,8 +323,22 @@ class DockerSandboxExecutor:
             "duration_ms": r.duration_ms,
             "container_removed": r.removed,
         }
-        return (
-            evidence.log_item("stdout.log", r.stdout, self._secrets, cap, r.stdout_truncated),
+        if command.result_file:
+            manifest["result_file"] = {
+                "present": raw_report is not None,
+                "valid": report is not None,
+                "problem": problem,
+                "cases": report.counts() if report else {},
+                "cases_truncated": bool(report and report.truncated),
+            }
+        items = [
+            evidence.log_item(
+                "stdout.log", frames.strip(r.stdout), self._secrets, cap, r.stdout_truncated
+            ),  # fmt: skip
             evidence.log_item("stderr.log", r.stderr, self._secrets, cap, r.stderr_truncated),
             evidence.manifest_item(manifest),
-        )
+        ]
+        if raw_report is not None and report is not None:
+            clean = evidence.redact(raw_report, self._secrets)
+            items.append(EvidenceItem("junit.xml", "report", "application/xml", clean))
+        return tuple(items)

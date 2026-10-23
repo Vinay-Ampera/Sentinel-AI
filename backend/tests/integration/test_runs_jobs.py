@@ -536,7 +536,7 @@ def test_running_cancel_terminates_reports_outcome_and_keeps_finished_batches(
     )
     assert set(
         r[0] for r in sql(e, "SELECT status FROM public.test_results WHERE batch_id = %s", b2)
-    ) == {"cancelled"}
+    ) == {"cancelled", "not_run"}
     detail = sql(
         e,
         "SELECT detail FROM public.job_events WHERE batch_id = %s AND to_status = 'cancelled'",
@@ -598,7 +598,7 @@ def test_failed_to_start_retries_are_bounded_and_not_reported_as_test_failures(
     deliver(e2, probe2)
     assert batch_rows(e2, run2)[0][1:] == ("failed", 1, "failed_to_start")
     assert run_status(e2, run2) == "failed"
-    assert set(result_statuses(e2, run2)) == {"failed_to_start", "skipped"}
+    assert set(result_statuses(e2, run2)) == {"failed_to_start", "not_run"}
     assert s2.request("GET", f"{API}/test-runs/{run2}").json()["error_code"] == "failed_to_start"
 
 
@@ -611,7 +611,7 @@ def test_batch_timeout_stops_the_batch_and_is_visible(make_env: Callable[..., En
     )
     assert deliver(e, probe) == ["timed_out"]
     assert batch_rows(e, run_id)[0][1] == "timed_out" and run_status(e, run_id) == "timed_out"
-    assert probe.terminated and set(result_statuses(e, run_id)) == {"timed_out", "skipped"}
+    assert probe.terminated and set(result_statuses(e, run_id)) == {"timed_out", "not_run"}
     assert "timeout" in event_types(e, run_id)
 
 
@@ -640,7 +640,8 @@ def test_run_and_queue_timeouts_are_reconciled(make_env: Callable[..., Env]) -> 
     assert reconciler.reconcile(factory(e2), cfg(e2)).runs_timed_out == 1
     assert run_status(e2, run2) == "timed_out"
     assert [b[1] for b in batch_rows(e2, run2)] == ["completed", "cancelled"]
-    assert len(result_statuses(e2, run2)) == 2
+    # The finished batch kept its results; the batch that never started says so explicitly.
+    assert sorted(result_statuses(e2, run2)) == ["not_run", "not_run", "skipped", "skipped"]
 
 
 # ---- revalidation in the worker ------------------------------------------------------------------

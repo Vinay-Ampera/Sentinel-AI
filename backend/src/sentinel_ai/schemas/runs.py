@@ -4,8 +4,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from sentinel_ai.repositories.runs import BatchRecord, EventRecord, ResultRecord, RunRecord
-from sentinel_ai.services.runs import RunView
+from sentinel_ai.repositories.runs import (
+    BatchRecord,
+    CaseRecord,
+    EventRecord,
+    EvidenceRecord,
+    ResultRecord,
+    RunRecord,
+)
+from sentinel_ai.services.runs import ResultDetail, RunView
 
 
 class _Strict(BaseModel):
@@ -25,6 +32,7 @@ class ProgressOut(BaseModel):
     batches_by_status: dict[str, int]
     tests_total: int
     results_by_status: dict[str, int]
+    cases_by_status: dict[str, int]
     tests_finished: int
 
 
@@ -59,6 +67,7 @@ class RunOut(BaseModel):
                 batches_by_status=p.batches_by_status,
                 tests_total=p.tests_total,
                 results_by_status=p.results_by_status,
+                cases_by_status=p.cases_by_status,
                 tests_finished=sum(p.results_by_status.values()),
             )
         return out
@@ -112,3 +121,48 @@ class EventOut(BaseModel):
     @classmethod
     def of(cls, e: EventRecord) -> "EventOut":
         return cls(**{k: getattr(e, k) for k in cls.model_fields})
+
+
+class CaseOut(BaseModel):
+    ordinal: int
+    suite: str | None
+    classname: str | None
+    name: str
+    status: str
+    duration_ms: int | None
+    message: str | None
+    detail: str | None
+
+    @classmethod
+    def of(cls, c: CaseRecord) -> "CaseOut":
+        return cls(**{k: getattr(c, k) for k in cls.model_fields})
+
+
+class EvidenceOut(BaseModel):
+    id: uuid.UUID
+    name: str | None
+    kind: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+
+    @classmethod
+    def of(cls, e: EvidenceRecord) -> "EvidenceOut":
+        return cls(
+            id=e.id, name=e.filename, kind=e.kind, content_type=e.content_type,
+            size_bytes=e.size_bytes, sha256=e.sha256,
+        )  # fmt: skip
+
+
+class ResultDetailOut(ResultOut):
+    cases: list[CaseOut]
+    evidence: list[EvidenceOut]
+
+    @classmethod
+    def from_detail(cls, d: ResultDetail) -> "ResultDetailOut":
+        base = ResultOut.of(d.result).model_dump()
+        return cls(
+            **base,
+            cases=[CaseOut.of(c) for c in d.cases],
+            evidence=[EvidenceOut.of(e) for e in d.evidence],
+        )

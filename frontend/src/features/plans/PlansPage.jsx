@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import PlanReview from './PlanReview.jsx'
+import RunsPanel from '../runs/RunsPanel.jsx'
 import { planStatusLabel } from './labels.js'
 import './plans.css'
 
@@ -121,6 +122,8 @@ export default function PlansPage({ api, user }) {
           </>
         )}
       </section>
+
+      {projectId && <RunsPanel key={projectId} api={api} projectId={projectId} plans={plans.data} />}
 
       {planId && <PlanReview key={planId} api={api} planId={planId} user={user} onChanged={refresh} />}
     </div>

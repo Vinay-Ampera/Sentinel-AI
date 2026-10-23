@@ -83,7 +83,7 @@ def test_no_host_secrets_reach_the_sandbox(
     out = probe(r, "import os,json;print(json.dumps({'env':dict(os.environ),'pid1':open('/proc/1/environ','rb').read().decode(errors='replace')}))")  # fmt: skip
     blob = json.dumps(out)
     assert "canary" not in blob
-    assert set(out["env"]) <= {"PATH", "HOME", "LANG"}
+    assert set(out["env"]) <= {"PATH", "HOME", "LANG", "PYTHONPATH", "PYTHONDONTWRITEBYTECODE", "PYTEST_DISABLE_PLUGIN_AUTOLOAD"}  # fmt: skip
     assert not any(k in out["pid1"] for k in ("DATABASE", "REDIS", "PEPPER", "SECRET", "TOKEN"))
 
 

@@ -16,11 +16,19 @@ from sentinel_ai.core.errors import DomainError
 from sentinel_ai.core.permissions import AccessLevel
 from sentinel_ai.repositories import plans, projects, runs
 from sentinel_ai.repositories.identity import UserRecord
-from sentinel_ai.repositories.runs import BatchRecord, EventRecord, ResultRecord, RunRecord
+from sentinel_ai.repositories.runs import (
+    BatchRecord,
+    CaseRecord,
+    EventRecord,
+    EvidenceRecord,
+    ResultRecord,
+    RunRecord,
+)
 from sentinel_ai.services import audit, authorizations, job_state
 from sentinel_ai.services import plans as plans_service
 from sentinel_ai.services import policy as policy_service
 from sentinel_ai.services import project_access as project_access_service
+from sentinel_ai.services.artifact_store import ArtifactStore, sha256_bytes
 from sentinel_ai.services.audit import RequestContext
 
 APPROVED_TEST = "approved"
@@ -33,6 +41,14 @@ class Progress:
     batches_by_status: dict[str, int]
     tests_total: int
     results_by_status: dict[str, int]
+    cases_by_status: dict[str, int]
+
+
+@dataclass(frozen=True)
+class ResultDetail:
+    result: ResultRecord
+    cases: list[CaseRecord]
+    evidence: list[EvidenceRecord]
 
 
 @dataclass(frozen=True)
@@ -48,6 +64,7 @@ def _progress(db: Session, run_id: uuid.UUID) -> Progress:
         batches_by_status=by_batch,
         tests_total=runs.item_count(db, run_id),
         results_by_status=runs.result_status_counts(db, run_id),
+        cases_by_status=runs.case_status_counts(db, run_id),
     )
 
 
@@ -215,6 +232,62 @@ def list_results(
     return runs.list_results(db, run_id, status=status, limit=1000)
 
 
+MAX_CASES_SHOWN = 1000
+MAX_EVIDENCE_BYTES = 20 * 1024 * 1024
+
+
+def get_result_detail(
+    db: Session, ctx: RequestContext, user: UserRecord, run_id: uuid.UUID, result_id: uuid.UUID
+) -> ResultDetail:
+    _authorized_run(db, ctx, user, run_id, AccessLevel.READ)
+    result = runs.get_result(db, run_id, result_id)  # scoped to the authorized run
+    if result is None:
+        raise DomainError(404, "not_found", "Result not found")
+    return ResultDetail(
+        result,
+        runs.list_cases(db, result_id, limit=MAX_CASES_SHOWN),
+        runs.list_result_evidence(db, result_id),
+    )
+
+
+def read_evidence(
+    db: Session,
+    ctx: RequestContext,
+    user: UserRecord,
+    settings: Settings,
+    artifact_id: uuid.UUID,
+) -> tuple[EvidenceRecord, bytes]:
+    """Evidence bytes for a run artifact, only through the project grant (or an audited,
+    read-only break-glass grant). The stored hash is re-checked before serving."""
+    record = runs.get_evidence(db, artifact_id)
+    if record is None:
+        raise DomainError(404, "not_found", "Evidence not found")
+    project_access_service.authorize_project(db, ctx, user, record.project_id, AccessLevel.READ)
+    if record.size_bytes > MAX_EVIDENCE_BYTES:
+        raise DomainError(413, "payload_too_large", "Evidence is too large to download here")
+    try:
+        path = ArtifactStore(settings.artifact_root()).path_for(record.storage_key)
+        if path.is_symlink() or not path.is_file():
+            raise OSError("missing")
+        data = path.read_bytes()
+    except (ValueError, OSError):
+        raise DomainError(404, "not_found", "Evidence file is not available") from None
+    if sha256_bytes(data) != record.sha256:
+        audit.record(
+            db, ctx, action="artifact.download", outcome="denied", actor_user_id=user.id,
+            project_id=record.project_id, target_type="artifact", target_id=str(record.id),
+            detail={"reason": "hash_mismatch"},
+        )  # fmt: skip
+        db.commit()
+        raise DomainError(409, "artifact_corrupt", "Stored evidence no longer matches its hash")
+    audit.record(
+        db, ctx, action="artifact.download", outcome="success", actor_user_id=user.id,
+        project_id=record.project_id, target_type="artifact", target_id=str(record.id),
+        detail={"name": record.filename, "size_bytes": record.size_bytes, "run_id": str(record.run_id)},
+    )  # fmt: skip
+    return record, data
+
+
 def list_events(
     db: Session, ctx: RequestContext, user: UserRecord, run_id: uuid.UUID, after: int
 ) -> list[EventRecord]:
@@ -235,6 +308,7 @@ def cancel_run(db: Session, ctx: RequestContext, user: UserRecord, run_id: uuid.
     stopped = 0
     for b in batches:
         if b.status in ("queued", "blocked"):
+            job_state.mark_unrun(db, run, b, "not_run", "Not run: the run was cancelled before this batch started.")  # fmt: skip
             stopped += job_state.batch_to(
                 db, b, "cancelled", actor_user_id=user.id, finish=True,
                 detail={"reason": "cancelled before start"},

@@ -17,7 +17,7 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 | 6 | Test plans and approval policies | Completed | Section 7 (2026-10-22 Stage 6 entry); migration 0003 not yet applied to the real DB |
 | 7 | Job queue, batches, cancellation, recovery | Completed | Section 7 (2026-10-23 Stage 7 entry); migrations 0003-0005 not yet applied to the real DB; uncommitted |
 | 8 | Sandboxed execution foundation | Completed | Section 7 (2026-10-23 Stage 8 entry); uncommitted; no migration |
-| 9 | First QA execution path | Pending | Not started |
+| 9 | First QA execution path | Completed | Section 7 (2026-10-24 Stage 9 entry); uncommitted; migration 0006 not applied to the real DB |
 | 10 | Security integrations and finding verification | Pending | Not started |
 | 11 | LangGraph workflows and selective Gemini | Pending | Not started |
 | 12 | Observability, alerts, failure-to-test loop | Pending | Not started |
@@ -28,22 +28,22 @@ Detailed progress record. The stage list, requirements and acceptance criteria a
 
 Owner review/commit state: Stages 0-5 are committed and pushed (owner report, 2026-10-22). Stage 6 is implemented but **uncommitted**.
 
-## 2. Latest verified results (Stage 8 completion, 2026-10-23)
+## 2. Latest verified results (Stage 9 completion, 2026-10-24)
 
 Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-alpine` container (127.0.0.1:56379) and the local Docker daemon (sandbox containers only, each test under its own scope label and removed afterwards). Nothing was run against the live `sentinel-ai` database, your dev Redis container, a live API server or a browser; `backend/.env` was not read. After the runs the daemon held 0 sandbox containers.
 
 | Configuration | Result |
 |---|---|
-| A: DB + Redis + Docker | 369 passed (1 upstream httpx/starlette warning) |
-| B: DB + Docker, no Redis | 366 passed, 3 skipped (real-broker tests) |
-| C: no DB, no Redis, Docker present | 225 passed, 144 skipped |
-| D: DB, no Redis, no Docker daemon | 327 passed, 42 skipped (Docker tests skip by design) |
-| E: nothing available | 195 passed, 174 skipped |
-| `ruff check` / `ruff format --check` | clean (104 files) |
-| `mypy` | clean (71 source files) |
-| Stage 8 tests | unit 41 (`test_sandbox.py`); Docker 30 (`test_sandbox_docker.py`); end-to-end 9 (`test_sandbox_e2e.py`); real worker process + Redis + Docker 1 (in `test_celery_broker.py`) |
-| Database changes in Stage 8 | none (head is still `0005_job_queue`; 0003-0005 are not applied to the real DB) |
-| Frontend | no frontend change; checks not re-run |
+| A: DB + Redis + Docker | 453 passed (1 upstream httpx/starlette warning) |
+| B: DB + Docker, no Redis | 449 passed, 4 skipped (real-broker tests) |
+| C: no DB, no Redis, Docker present | 301 passed, 152 skipped |
+| D: DB, no Redis, no Docker daemon | 386 passed, 67 skipped (Docker tests skip by design) |
+| E: nothing available | 252 passed, 201 skipped |
+| `ruff check` / `ruff format --check` | clean (110 files) |
+| `mypy` | clean (73 source files) |
+| Frontend | `npm run lint` clean; `npm test` 24 passed (4 files; 13 new); `npm run build` ok |
+| Stage 9 tests | unit 57 (`test_pytest_runner.py`); Docker/pytest 19 (`test_sandbox_pytest.py`); end-to-end 5 (`test_pytest_e2e.py`); migration 2 (in `test_migrations.py`); real worker process + Redis + Docker running pytest 1 (in `test_celery_broker.py`); frontend 13 |
+| Database changes in Stage 9 | one migration, `0006_test_cases` (tested up/down on the disposable DB; **not applied to the real DB**, nor are 0003-0005) |
 
 ## 3. Decisions and scope (pointers and summaries)
 
@@ -62,9 +62,9 @@ Disposable PostgreSQL 17 (private cluster, port 55432), a throw-away `redis:7-al
 
 ## 4. Remaining work and known issues
 
-- Stages 7 and 8 are implemented and **uncommitted**; Stage 9 (first QA execution path) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
-- Owner actions for Stages 6-7: review and commit; apply migrations 0003, 0004 and 0005 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0005_job_queue --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
-- Execution: `JOB_EXECUTOR=stub` is still the default (every test `skipped`, "Not executed"). `JOB_EXECUTOR=docker` is an explicit opt-in that runs only the fixed `sandbox_smoke` command in network-less containers; no project code runs until Stage 9. Build the image first: `make -C backend sandbox-image`. Stage 8 follow-ups: Q58-Q64. No new environment variables were added, so `.env`/`.env.example` need no change.
+- Stage 9 is implemented and **uncommitted** (Stages 7-8 are committed); Stage 10 (security integrations) is not started and needs owner go-ahead. Stage 6 follow-ups: Q40-Q46 in `OPEN_QUESTIONS.md`. Stage 7 follow-ups: Q52-Q57.
+- Owner actions for Stages 6-9: review and commit; apply migrations 0003-0006 to the real database after reviewing `alembic upgrade 0002_public_application_schema:0006_test_cases --sql` (awaiting your approval; not done). Add the optional `JOB_*` variables (see `backend/README.md`) to `backend/.env.example` (outside Claude's permitted paths); none is required (defaults apply). The real Redis needs `REDIS_URL` with its password in `backend/.env`.
+- Execution: `JOB_EXECUTOR=stub` is still the default (every test `skipped`, "Not executed"). `JOB_EXECUTOR=docker` is an explicit opt-in that runs only the fixed `sandbox_smoke` command in network-less containers; project code runs only if the operator opts in (Stage 9). Build the image first: `make -C backend sandbox-image` (now vendors pytest from the lock file; rebuild after Stage 9). Running a project's own tests (`pytest_unit`) is a further opt-in (`SANDBOX_ALLOW_PROJECT_CODE` + a stronger runtime or `SANDBOX_ACCEPT_SHARED_KERNEL=true`). Follow-ups: Q58-Q64 (Stage 8), Q65-Q72 (Stage 9). No new environment variables were added, so `.env`/`.env.example` need no change.
 - Analysis of Git (needs sandboxed clone and credentials, Q25), localhost (Q26) and remote URL sources (needs target authorization, Stage 6, and sandbox, Stage 8) — Q36.
 - Asynchronous analysis stays synchronous (Q37 deferred again, Q52); upload retention sweep (Q39); password reset and team routes (Q35); developer-visible user list (Q34); breach-corpus password check (Q33).
 - Redis: Compose config verified and a Redis container was exercised in tests (Q32); your dev Redis was not touched. Readiness still does not require Redis (Q31).
@@ -383,4 +383,19 @@ NOT run: the real database, your dev Redis, a live API server, a browser, fronte
 Acceptance criteria: a sample command runs only inside the sandbox (tests + end to end; the host never executes it); the sandbox cannot read backend secrets or unrelated workspaces (env, mounts, per-container tmpfs, project-scoped source lookup, hash check); CPU/memory/process/time/filesystem/network limits are enforced as configured (asserted from the daemon's HostConfig and by behavior); containers and workspaces are cleaned after success, failure, timeout, cancellation, OOM and worker loss; risky or unauthorized targets are blocked before execution (network checks and unverified or foreign archives are `blocked`, unknown checks `skipped`, Stage 7 revalidation unchanged).
 Known issues: Q58-Q64 in OPEN_QUESTIONS.md.
 Next action: owner review and commit; build the image; apply migrations 0003-0005 to the real database; Stage 9 on approval.
+```
+
+```text
+Date: 2026-10-24
+Stage: 9 (first QA execution path)
+Status: DONE pending owner review (all acceptance criteria met with recorded evidence; Playwright not started; UI verified by unit tests only).
+Design: the owner asked to proceed straight to implementation; decisions were taken within that approval and recorded in ADR-0006 for review (Q65): offline vendored pytest (Q60), URL targets stay blocked (Q26), noexec kept (Q62), project code gated behind explicit opt-in flags (Q59), exit-code-derived status, evidence download rules (Q64).
+Implemented: migration 0006 (test_results.status += not_run; test_case_results); sandbox/vendor.py + Dockerfile (pytest, pluggy, iniconfig, packaging, pygments vendored from poetry.lock, no network, no compiled extensions); sandbox/entry.py result-file framing (regular file, O_NOFOLLOW, 2 MiB cap, nonce, sha256); execution/{junit,frames}.py (defensive parsing, last valid frame, frame scrubbing); commands.py pytest_unit with validated target_path/timeout_seconds; docker_executor (project-code gate, parameters, result handling, exit-code mapping, redacted cases and evidence incl. junit.xml, manifest v2); docker_runner stdout tail buffer; settings SANDBOX_ALLOW_PROJECT_CODE / SANDBOX_ACCEPT_SHARED_KERNEL with validator; worker passes parameters, stores cases, continues after a single test timeout, writes explicit not_run results (also for batches cancelled or timed out while queued); API GET /test-runs/{run}/results/{result} and GET /artifacts/{id}/content (project grant, run evidence only, hash re-check, audit, attachment headers), progress cases_by_status; frontend RunsPanel (start with idempotency key, history, cancel, polled progress, results with distinct honest labels, cases, plain-text evidence view) wired into the plans page.
+Bugs found by the new tests and fixed: JUnit time="1e999" crashed the parser (OverflowError); one control byte made the whole report unparseable (now stripped); a single test timeout wrongly ended its batch; the run detail view kept polling after the run finished (stale status).
+Tests added: see section 2. Docker/pytest tests prove, from inside real pytest runs: no env secrets, no network (host loopback, gateway, internet), no Docker socket, read-only root and vendored code, uid 65534, zero capabilities, non-executable tmpfs; plus forged results, XML bomb/DOCTYPE, oversized/symlink/FIFO/garbage result files, output flood with the result still found, infinite loop (timed_out), memory hog (error/OOM), fork bomb (contained), cancel, project-code gate off (blocked, no container), hostile archive (blocked on the host).
+Commands actually run: make sandbox-image (vendor + docker build, local base); pytest in five configurations; ruff check/format; mypy; alembic heads; npm run lint/test/build; private PostgreSQL 17 and a throw-away Redis container for tests only; real Celery worker process runs.
+NOT run: the real database, your dev Redis, a live API server, a browser (no axe/accessibility run), Playwright/browser tests (not started, Q69), gVisor/Kata, rootless Docker, any JavaScript or non-Python runner, load/soak tests, a dependency-installing flow (none exists, Q66).
+Acceptance criteria: a user can select an approved plan, start a run, watch progress, cancel it and inspect evidence (API tested end to end; UI tested with Vitest/jsdom only); result states distinguish passed, failed, skipped, blocked, timed_out and not_run (plus error, cancelled, failed_to_start), all asserted in API tests and shown with distinct labels; failed_to_start is never reported as a test failure or pass (missing-image run: result failed_to_start, no cases, batch failed_to_start); run ownership and artifact authorization are enforced (outsider/anonymous/other-run/uploads/tampered/missing/traversal checks, admin and super admin need a grant, break-glass read-only and audited, read members can read but not start/cancel).
+Known issues: Q65-Q72 in OPEN_QUESTIONS.md. Most real projects will report error until a dependency path exists (Q66).
+Next action: owner review and commit; rebuild the image (make sandbox-image); apply migrations 0003-0006 to the real database; Stage 10 on approval.
 ```

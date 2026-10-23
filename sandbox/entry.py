@@ -1,7 +1,7 @@
 """Trusted runner inside the sandbox container (standard library only).
 
     entry.py [--extract MAX_ZIP_BYTES MAX_FILES MAX_TOTAL_BYTES MAX_FILE_BYTES]
-             --timeout SECONDS -- COMMAND [ARG ...]
+             [--result-file PATH NONCE MAX_BYTES] --timeout SECONDS -- COMMAND [ARG ...]
 
 With --extract the source archive is read from stdin (bounded) and extracted into
 /workspace/src with strict checks; then COMMAND runs with a minimal environment and a hard
@@ -9,9 +9,17 @@ timeout. The command is chosen by the Sentinel worker from a fixed table, never 
 input. Everything this process reads (the archive) and everything COMMAND prints is
 untrusted data for the host, which derives the result from the container's exit state.
 
+With --result-file, after COMMAND ends (even on timeout) this trusted process reads PATH (a
+regular file, never a symlink, size-capped) and prints it as one framed, base64 block on
+stdout. The host parses the last frame carrying its NONCE and treats the content as
+untrusted data: the file is written by the project's own code, so it can only describe the
+project's own tests.
+
 Exit codes: 70 archive rejected, 71 usage error, 124 timeout; otherwise the command's own.
 """
 
+import base64
+import hashlib
 import os
 import posixpath
 import signal
@@ -115,8 +123,49 @@ def extract(zip_path: str, max_files: int, max_total: int, max_file: int) -> Non
                     out.write(chunk)
 
 
+def emit_result(path: str, nonce: str, limit: int) -> None:
+    """Print PATH as a framed base64 block (see module docstring). Silent if unusable."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            return
+        chunks: list[bytes] = []
+        remaining = limit + 1
+        while remaining > 0:
+            chunk = os.read(fd, min(65536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+    except OSError:
+        return
+    finally:
+        os.close(fd)
+    if len(data) > limit:
+        return
+    out = sys.stdout.buffer
+    out.write(f"\n@@SENTINEL-RESULT {nonce} {len(data)} {hashlib.sha256(data).hexdigest()}\n".encode())
+    encoded = base64.b64encode(data)
+    for i in range(0, len(encoded), 76):
+        out.write(encoded[i : i + 76] + b"\n")
+    out.write(f"@@SENTINEL-END {nonce}\n".encode())
+    out.flush()
+
+
 def run_command(argv: list[str], timeout: float, cwd: str) -> int:
-    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp", "LANG": "C.UTF-8"}
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/tmp",
+        "LANG": "C.UTF-8",
+        "PYTHONPATH": "/opt/sentinel/site",  # vendored pytest, read-only
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+    }
     proc = subprocess.Popen(  # noqa: S603 - argv comes from the worker's fixed table
         argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, start_new_session=True
     )
@@ -134,6 +183,7 @@ def run_command(argv: list[str], timeout: float, cwd: str) -> int:
 
 def main(args: list[str]) -> int:
     extract_limits: list[int] | None = None
+    result_file: tuple[str, str, int] | None = None
     timeout = 60.0
     try:
         i = 0
@@ -143,6 +193,11 @@ def main(args: list[str]) -> int:
                 if len(extract_limits) != 4 or min(extract_limits) <= 0:
                     return EXIT_USAGE
                 i += 5
+            elif args[i] == "--result-file":
+                result_file = (args[i + 1], args[i + 2], int(args[i + 3]))
+                if not args[i + 2].isalnum() or result_file[2] <= 0:
+                    return EXIT_USAGE
+                i += 4
             elif args[i] == "--timeout":
                 timeout = float(args[i + 1])
                 i += 2
@@ -169,7 +224,10 @@ def main(args: list[str]) -> int:
             print(f"sandbox: archive could not be extracted: {exc.strerror}", file=sys.stderr)
             return EXIT_REJECTED
         cwd = SOURCE
-    return run_command(command, timeout, cwd)
+    code = run_command(command, timeout, cwd)
+    if result_file is not None:
+        emit_result(*result_file)
+    return code
 
 
 if __name__ == "__main__":

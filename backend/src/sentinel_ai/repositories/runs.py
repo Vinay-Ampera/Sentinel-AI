@@ -95,6 +95,34 @@ class ResultRecord:
 
 
 @dataclass(frozen=True)
+class CaseRecord:
+    id: uuid.UUID
+    result_id: uuid.UUID
+    ordinal: int
+    suite: str | None
+    classname: str | None
+    name: str
+    status: str
+    duration_ms: int | None
+    message: str | None
+    detail: str | None
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    id: uuid.UUID
+    project_id: uuid.UUID
+    run_id: uuid.UUID | None
+    result_id: uuid.UUID | None
+    kind: str
+    storage_key: str
+    sha256: str
+    size_bytes: int
+    content_type: str
+    filename: str | None
+
+
+@dataclass(frozen=True)
 class EventRecord:
     id: int
     run_id: uuid.UUID
@@ -537,6 +565,86 @@ def list_evidence(db: Session, run_id: uuid.UUID, result_id: uuid.UUID) -> list[
         {"r": run_id, "res": result_id},
     ).all()
     return [(r[0], r[1]) for r in rows]
+
+
+def get_result(db: Session, run_id: uuid.UUID, result_id: uuid.UUID) -> ResultRecord | None:
+    row = db.execute(
+        text(f"SELECT {_RESULT} FROM public.test_results WHERE id = :i AND run_id = :r"),
+        {"i": result_id, "r": run_id},
+    ).first()
+    return ResultRecord(**row._mapping) if row else None
+
+
+def insert_cases(
+    db: Session, run_id: uuid.UUID, result_id: uuid.UUID, cases: "tuple[Any, ...]"
+) -> None:
+    for ordinal, c in enumerate(cases, start=1):
+        db.execute(
+            text(
+                "INSERT INTO public.test_case_results (result_id, run_id, ordinal, suite, "
+                "classname, name, status, duration_ms, message, detail) VALUES "
+                "(:res, :run, :o, :su, :cl, :n, :st, :d, :m, :de) "
+                "ON CONFLICT ON CONSTRAINT test_case_results_ordinal DO NOTHING"
+            ),
+            {"res": result_id, "run": run_id, "o": ordinal, "su": c.suite, "cl": c.classname,
+             "n": c.name, "st": c.status, "d": c.duration_ms, "m": c.message, "de": c.detail},
+        )  # fmt: skip
+
+
+def list_cases(db: Session, result_id: uuid.UUID, *, limit: int) -> list[CaseRecord]:
+    rows = db.execute(
+        text(
+            "SELECT id, result_id, ordinal, suite, classname, name, status, duration_ms, message, "
+            "detail FROM public.test_case_results WHERE result_id = :r ORDER BY ordinal LIMIT :n"
+        ),
+        {"r": result_id, "n": limit},
+    ).all()
+    return [CaseRecord(**r._mapping) for r in rows]
+
+
+def case_status_counts(db: Session, run_id: uuid.UUID) -> dict[str, int]:
+    rows = db.execute(
+        text(
+            "SELECT status, count(*) FROM public.test_case_results WHERE run_id = :r GROUP BY status"
+        ),
+        {"r": run_id},
+    ).all()
+    return {r[0]: int(r[1]) for r in rows}
+
+
+_EVIDENCE = (
+    "id, project_id, run_id, result_id, kind, storage_key, sha256, size_bytes, content_type, "
+    "original_filename AS filename"
+)
+
+
+def list_result_evidence(db: Session, result_id: uuid.UUID) -> list[EvidenceRecord]:
+    rows = db.execute(
+        text(
+            f"SELECT {_EVIDENCE} FROM public.artifacts WHERE result_id = :r AND deleted_at IS NULL "
+            "AND kind IN ('log', 'report') ORDER BY original_filename"
+        ),
+        {"r": result_id},
+    ).all()
+    return [_evidence(r) for r in rows]
+
+
+def get_evidence(db: Session, artifact_id: uuid.UUID) -> EvidenceRecord | None:
+    """Only run evidence (a log or report attached to a run); never an upload or script."""
+    row = db.execute(
+        text(
+            f"SELECT {_EVIDENCE} FROM public.artifacts WHERE id = :i AND deleted_at IS NULL "
+            "AND run_id IS NOT NULL AND kind IN ('log', 'report')"
+        ),
+        {"i": artifact_id},
+    ).first()
+    return _evidence(row) if row else None
+
+
+def _evidence(row: Any) -> EvidenceRecord:
+    data = dict(row._mapping)
+    data["sha256"] = data["sha256"].strip()
+    return EvidenceRecord(**data)
 
 
 def finished_test_ids(db: Session, batch_id: uuid.UUID) -> set[uuid.UUID]:

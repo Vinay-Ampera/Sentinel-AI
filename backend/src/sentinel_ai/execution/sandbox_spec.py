@@ -15,6 +15,9 @@ LABEL_SCOPE = "sentinel.sandbox.scope"
 LABEL_RUN = "sentinel.sandbox.run"
 LABEL_BATCH = "sentinel.sandbox.batch"
 RUNNER_UID = "65534:65534"
+RESULT_MAX_BYTES = 2 * 1024 * 1024  # largest result file the in-image runner will frame
+_NONCE = re.compile(r"[0-9a-f]{16,64}")
+_RESULT_PATH = re.compile(r"/tmp/[A-Za-z0-9_.-]{1,64}")
 
 _IMAGE = re.compile(r"[a-z0-9][a-z0-9_./:@-]{0,199}")
 _PLAIN = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}")
@@ -45,6 +48,8 @@ class SandboxSpec:
     limits: SandboxLimits
     extract_source: bool
     runtime: str | None = None
+    result_file: str | None = None  # file under /tmp the runner frames onto stdout at the end
+    result_nonce: str | None = None
 
     def validate(self) -> None:
         if not _IMAGE.fullmatch(self.image):
@@ -55,6 +60,12 @@ class SandboxSpec:
             raise ValueError("invalid runtime name")
         if not self.command or any(("\x00" in a or not a) for a in self.command):
             raise ValueError("invalid command")
+        if (self.result_file is None) != (self.result_nonce is None):
+            raise ValueError("result file and nonce go together")
+        if self.result_file is not None and not _RESULT_PATH.fullmatch(self.result_file):
+            raise ValueError("invalid result file")
+        if self.result_nonce is not None and not _NONCE.fullmatch(self.result_nonce):
+            raise ValueError("invalid result nonce")
         lim = self.limits
         positive = (
             lim.cpus,
@@ -112,5 +123,7 @@ def create_argv(docker_bin: str, name: str, spec: SandboxSpec) -> list[str]:
             "--extract", str(lim.max_zip_bytes), str(lim.max_files),
             str(lim.max_extract_mb * 1024 * 1024), str(lim.max_file_mb * 1024 * 1024),
         ]  # fmt: skip
+    if spec.result_file and spec.result_nonce:
+        argv += ["--result-file", spec.result_file, spec.result_nonce, str(RESULT_MAX_BYTES)]
     argv += ["--timeout", str(lim.timeout_seconds), "--", *spec.command]
     return argv

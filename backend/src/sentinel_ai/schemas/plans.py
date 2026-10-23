@@ -162,7 +162,6 @@ class PlanOut(PlanSummaryOut):
     tests: list[PlannedTestOut]
     counts: dict[str, int]
     approval: ApprovalOut | None
-    execution_available: bool
     notice: str
     viewer_can_approve: bool
 
@@ -180,11 +179,10 @@ class PlanOut(PlanSummaryOut):
             tests=[PlannedTestOut.from_record(t) for t in d.tests],
             counts=counts,
             approval=ApprovalOut.from_record(d.approval) if d.approval else None,
-            execution_available=False,
             viewer_can_approve=viewer_can_approve,
             notice=(
-                "Planning only: no test runner is connected yet, so nothing has been executed. "
-                "Approval makes a plan eligible for a later run; it does not start one."
+                "Reviewing or approving a plan does not run anything. An approved plan can be "
+                "started under Test runs; what actually ran, and how it ended, is shown there."
             ),
         )
 

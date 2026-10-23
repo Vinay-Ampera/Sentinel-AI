@@ -22,6 +22,7 @@ from sentinel_ai.core.config import Settings
 from sentinel_ai.core.permissions import AccessLevel, Permission, has_permission
 from sentinel_ai.execution.interface import (
     OUTCOME_STATUSES,
+    CaseResult,
     EvidenceItem,
     ExecutionRequest,
     Executor,
@@ -245,6 +246,7 @@ def _run_batch(
                 timeout_seconds=batch.timeout_seconds,
                 project_id=run.project_id,
                 workspace=workspace,
+                parameters=dict(test.definition.get("parameters") or {}),
             ),
             should_stop,
         )
@@ -263,6 +265,8 @@ def _run_batch(
                 exit_code=outcome.exit_code, duration_ms=outcome.duration_ms,
             )  # fmt: skip
             db.commit()
+        if result_id is not None and outcome.cases:
+            _store_cases(factory, run, result_id, outcome.cases)
         if result_id is not None and outcome.evidence:
             _store_evidence(factory, settings, run, result_id, outcome.evidence)
         if status == "failed_to_start":
@@ -270,10 +274,13 @@ def _run_batch(
             break
         if status in ("cancelled", "timed_out"):
             if state["stop"] is None:
-                should_stop()
-            if state["stop"] is None:
-                state["stop"] = "timeout" if status == "timed_out" else "cancel"
-            break
+                should_stop()  # is the whole batch being cancelled or out of time?
+            if state["stop"] is not None:
+                break
+            if status == "cancelled":
+                state["stop"] = "cancel"  # an executor only cancels because it was told to
+                break
+            # Otherwise this one test hit its own time limit: record it and run the rest.
 
     return _settle(factory, settings, executor, run, batch, worker_id, state["stop"])
 
@@ -300,6 +307,21 @@ def _workspace(db: Session, run: RunRecord, test: PlannedTestRecord) -> Workspac
     if artifact is None:
         return None
     return WorkspaceRef(artifact.storage_key, artifact.sha256, artifact.size_bytes)
+
+
+def _store_cases(
+    factory: sessionmaker[Session],
+    run: RunRecord,
+    result_id: uuid.UUID,
+    cases: tuple[CaseResult, ...],
+) -> None:
+    """Keep the individual cases a runner reported. Never loses the committed result."""
+    try:
+        with factory() as db:
+            runs.insert_cases(db, run.id, result_id, cases)
+            db.commit()
+    except Exception as exc:
+        logger.error("cases for result %s could not be stored (%s)", result_id, type(exc).__name__)
 
 
 def _store_evidence(
@@ -366,7 +388,7 @@ def _settle(
                 outcome = "retry"
             else:
                 job_state.mark_unrun(
-                    db, run, current, "skipped", "Not run: the batch failed to start."
+                    db, run, current, "not_run", "Not run: the batch failed to start."
                 )
                 job_state.batch_to(
                     db, current, "failed", worker_id=worker_id, finish=True,
@@ -375,7 +397,7 @@ def _settle(
                 )  # fmt: skip
                 outcome = "failed"
         elif stop == "cancel":
-            job_state.mark_unrun(db, run, current, "cancelled", "Not run: the run was cancelled.")
+            job_state.mark_unrun(db, run, current, "not_run", "Not run: the run was cancelled.")
             if terminated:
                 job_state.batch_to(
                     db, current, "cancelled", worker_id=worker_id, finish=True,
@@ -390,7 +412,7 @@ def _settle(
                 )  # fmt: skip
                 outcome = "failed"
         elif stop == "timeout":
-            job_state.mark_unrun(db, run, current, "skipped", "Not run: the batch timed out.")
+            job_state.mark_unrun(db, run, current, "not_run", "Not run: the batch timed out.")
             job_state.batch_to(
                 db, current, "timed_out", event_type="timeout", worker_id=worker_id, finish=True,
                 error_code="timeout", error_summary="The batch exceeded its time limit.",

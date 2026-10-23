@@ -8,8 +8,8 @@ boundary.
 
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 # Statuses an executor may report (a subset of test_results.status). ``blocked`` means it
 # refused to run the check before starting anything.
@@ -38,6 +38,9 @@ class ExecutionRequest:
     timeout_seconds: int
     project_id: uuid.UUID | None = None
     workspace: WorkspaceRef | None = None
+    # Plan-time parameters (already validated and frozen with the approved plan). The
+    # executor validates them again before use.
+    parameters: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -52,12 +55,27 @@ class EvidenceItem:
 
 
 @dataclass(frozen=True)
+class CaseResult:
+    """One case a runner reported (for pytest, one test function). Text is untrusted:
+    redacted, control characters removed and clipped before it gets here."""
+
+    name: str
+    status: str  # passed | failed | error | skipped
+    suite: str | None = None
+    classname: str | None = None
+    duration_ms: int | None = None
+    message: str | None = None
+    detail: str | None = None
+
+
+@dataclass(frozen=True)
 class ExecutionOutcome:
     status: str
     summary: str
     exit_code: int | None = None
     duration_ms: int | None = None
     evidence: tuple[EvidenceItem, ...] = ()
+    cases: tuple[CaseResult, ...] = ()
 
 
 class Executor(Protocol):

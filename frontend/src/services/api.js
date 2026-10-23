@@ -16,8 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body) {
-  const headers = { Accept: 'application/json' }
+async function request(method, path, body, extraHeaders = {}) {
+  const headers = { Accept: 'application/json', ...extraHeaders }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (UNSAFE.has(method) && csrfToken) headers['X-CSRF-Token'] = csrfToken
   let response
@@ -65,6 +65,53 @@ export function checkPlan(plan) {
     plan.tests.every((t) => t && typeof t.id === 'string' && typeof t.status === 'string')
   if (!ok) throw bad('plan')
   return plan
+}
+
+export function checkRun(run) {
+  const ok =
+    run &&
+    typeof run.id === 'string' &&
+    typeof run.status === 'string' &&
+    typeof run.plan_id === 'string' &&
+    (run.progress === null ||
+      run.progress === undefined ||
+      (typeof run.progress.tests_total === 'number' && typeof run.progress.tests_finished === 'number'))
+  if (!ok) throw bad('run')
+  return run
+}
+
+function checkResult(result) {
+  const ok =
+    result &&
+    typeof result.id === 'string' &&
+    typeof result.status === 'string' &&
+    typeof result.planned_test_id === 'string'
+  if (!ok) throw bad('result')
+  return result
+}
+
+// Evidence is untrusted text from a sandbox: fetched as text, never rendered as HTML, and
+// shortened for display (the full file stays downloadable).
+const EVIDENCE_LIMIT = 200_000
+
+async function requestText(path) {
+  let response
+  try {
+    response = await fetch(`${BASE}${path}`, { credentials: 'include' })
+  } catch {
+    throw new ApiError(0, 'network_error', 'Could not reach the server')
+  }
+  if (!response.ok) {
+    let e = null
+    try {
+      e = (await response.json()).error
+    } catch {
+      // not JSON
+    }
+    throw new ApiError(response.status, (e && e.code) || 'error', (e && e.message) || `Request failed (${response.status})`)
+  }
+  const text = await response.text()
+  return { text: text.slice(0, EVIDENCE_LIMIT), truncated: text.length > EVIDENCE_LIMIT }
 }
 
 function checkItems(data, what) {
@@ -115,5 +162,34 @@ export const api = {
   },
   async decideApproval(approvalId, decision, reason) {
     return request('POST', `/approvals/${approvalId}/decision`, { decision, reason })
+  },
+  async listRuns(projectId) {
+    const data = await request('GET', `/projects/${projectId}/test-runs`)
+    if (!Array.isArray(data)) throw bad('runs')
+    return data.map(checkRun)
+  },
+  async createRun(projectId, planId, idempotencyKey) {
+    return checkRun(
+      await request('POST', `/projects/${projectId}/test-runs`, { plan_id: planId }, { 'Idempotency-Key': idempotencyKey }),
+    )
+  },
+  async getRun(runId) {
+    return checkRun(await request('GET', `/test-runs/${runId}`))
+  },
+  async cancelRun(runId) {
+    return checkRun(await request('POST', `/test-runs/${runId}/cancel`))
+  },
+  async listRunResults(runId) {
+    const data = await request('GET', `/test-runs/${runId}/results`)
+    if (!Array.isArray(data)) throw bad('results')
+    return data.map(checkResult)
+  },
+  async getRunResult(runId, resultId) {
+    const data = checkResult(await request('GET', `/test-runs/${runId}/results/${resultId}`))
+    if (!Array.isArray(data.cases) || !Array.isArray(data.evidence)) throw bad('result detail')
+    return data
+  },
+  getEvidenceText(artifactId) {
+    return requestText(`/artifacts/${artifactId}/content`)
   },
 }

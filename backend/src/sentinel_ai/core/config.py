@@ -130,6 +130,11 @@ class Settings(DatabaseSettings):
     sandbox_test_timeout_seconds: int = 300
     sandbox_output_cap_bytes: int = 1_048_576
     sandbox_start_timeout_seconds: int = 60
+    # Running a project's own code (pytest) is off unless the operator opts in, and then only
+    # with a stronger runtime (SANDBOX_RUNTIME, e.g. gVisor/Kata) or an explicit acceptance of
+    # the shared-kernel risk of plain Docker.
+    sandbox_allow_project_code: bool = False
+    sandbox_accept_shared_kernel: bool = False
 
     # --- LLM (consumed from Stage 11) ---
     gemini_api_key: SecretStr | None = None
@@ -219,6 +224,14 @@ class Settings(DatabaseSettings):
             raise ValueError("tmpfs sizes count against memory: raise SANDBOX_MEMORY_MB")
         if self.sandbox_max_file_mb > self.sandbox_max_extract_mb:
             raise ValueError("SANDBOX_MAX_FILE_MB cannot exceed SANDBOX_MAX_EXTRACT_MB")
+        if self.sandbox_allow_project_code:
+            if self.job_executor != "docker":
+                raise ValueError("SANDBOX_ALLOW_PROJECT_CODE requires JOB_EXECUTOR=docker")
+            if self.sandbox_runtime is None and not self.sandbox_accept_shared_kernel:
+                raise ValueError(
+                    "running project code needs SANDBOX_RUNTIME (gVisor/Kata) or an explicit "
+                    "SANDBOX_ACCEPT_SHARED_KERNEL=true"
+                )
         return self
 
     @model_validator(mode="after")

@@ -110,7 +110,7 @@ def test_smoke_check_runs_in_a_real_sandbox_and_stores_evidence(denv: tuple[Env,
 
 def test_checks_without_a_runner_are_skipped_and_never_start_a_container(denv: tuple[Env, DockerRunner]) -> None:  # fmt: skip
     e, runner = denv
-    s, pid, plan, _ = smoke_plan(e, ["pytest_unit"])
+    s, pid, plan, _ = smoke_plan(e, ["semgrep_static"])
     run_id = start(s, pid, plan).json()["id"]
     deliver(e, executor_for(e))
     assert sorted(result_statuses(e, run_id)) == ["passed", "skipped"]
@@ -211,7 +211,7 @@ def test_reconciler_removes_the_sandbox_a_lost_worker_left_behind(denv: tuple[En
     assert not worker.is_alive() and outcome == ["lost"] and runner._ids() == []
     assert batch_rows(e, run_id)[0][1:] == ("failed", 1, "worker_lost")
     # The late worker did not record the killed container as a failed test.
-    assert result_statuses(e, run_id) == ["skipped"] and run_status(e, run_id) == "failed"
+    assert result_statuses(e, run_id) == ["not_run"] and run_status(e, run_id) == "failed"
 
 
 def test_janitor_removes_a_leaked_container_during_reconcile(denv: tuple[Env, DockerRunner]) -> None:  # fmt: skip
