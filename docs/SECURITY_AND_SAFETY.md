@@ -81,3 +81,6 @@ Prompt injection from repo/ZIP/web content (treated as data; no tool authority f
 
 ## Rules (unchanged)
 Never fabricate results; scanner output is not "confirmed" without verification evidence; "not run" must be reported as such.
+
+## Model use (Stage 11)
+All model calls go through one gateway (`integrations/llm/gateway.py`): redaction of secrets and e-mail addresses, per-purpose evidence allow-lists, size caps, token and cost budgets reserved before the call (blocked calls are recorded and audited as `llm.budget_blocked`), per-attempt timeouts under one workflow deadline, bounded retries, schema validation, usage rows. Prompts and model output are not stored; the trace holds counts and reason codes. Model output is data: it can select catalog checks, cite evidence and draft text, and cannot set a status, risk, approval, target or command, start a run, or change a finding; drafted tests are text for a person to accept or reject and are never written, committed or run. Starting a workflow needs `run` access (break-glass is read-only and cannot). Residual risks: redaction is best-effort (Q113); a hostile project can still try to steer a model's wording (mitigated by delimited untrusted data, citations that must exist, and human review); real-provider behaviour is unverified (Q104).

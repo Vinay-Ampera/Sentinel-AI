@@ -27,7 +27,7 @@ EXPECTED_PUBLIC = {
     "job_events", "findings", "finding_events", "finding_evidence",
     "verification_attempts", "regression_tests", "llm_usage", "policies",
     "audit_events", "state_transitions", "test_batch_items", "test_case_results",
-    "finding_groups",
+    "finding_groups", "agent_runs", "agent_steps",
 }  # fmt: skip
 EXPECTED_APP_USER = {"roles", "users", "sessions", "password_reset_tokens"}
 
@@ -456,6 +456,96 @@ def test_downgrading_0007_keeps_findings(conn: psycopg.Connection) -> None:
         cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'findings'").fetchall()}  # fmt: skip
         assert not cols & {"confidence", "rule_id", "limitations", "occurrences", "source_id"}
         assert conn.execute("SELECT count(*) FROM public.finding_events WHERE event_type = 'reopened'").fetchone() == (0,)  # fmt: skip
+    finally:
+        _alembic("upgrade", "head")
+        conn.execute("TRUNCATE app_user.users, public.projects CASCADE")
+
+
+def test_agent_run_tables_and_llm_usage_columns_from_0009(conn: psycopg.Connection, seed: _Seed) -> None:  # fmt: skip
+    run_sql = "INSERT INTO public.agent_runs (project_id, workflow, status, degraded_reason, finished_at) VALUES (%s, %s, %s, %s, %s) RETURNING id"  # fmt: skip
+    ok = conn.execute(run_sql, (seed.project, "planning", "degraded", "budget_blocked", "2026-01-01")).fetchone()  # fmt: skip
+    assert ok
+    _expect(conn, errors.CheckViolation, run_sql, (seed.project, "chat", "running", None, None))
+    _expect(conn, errors.CheckViolation, run_sql, (seed.project, "planning", "running", None, "2026-01-01"))  # fmt: skip
+    _expect(conn, errors.CheckViolation, run_sql, (seed.project, "planning", "succeeded", None, None))  # fmt: skip
+    _expect(conn, errors.CheckViolation, run_sql, (seed.project, "planning", "degraded", None, "2026-01-01"))  # fmt: skip
+
+    step = "INSERT INTO public.agent_steps (agent_run_id, seq, node, kind, outcome) VALUES (%s, %s, 'n', %s, 'ok')"  # fmt: skip
+    conn.execute(step, (ok[0], 1, "llm"))
+    _expect(conn, errors.UniqueViolation, step, (ok[0], 1, "llm"))
+    _expect(conn, errors.CheckViolation, step, (ok[0], 2, "magic"))
+    _expect(conn, errors.CheckViolation, step, (ok[0], 0, "llm"))
+    _expect(
+        conn, errors.CheckViolation, "UPDATE public.agent_steps SET outcome = 'x'"
+    )  # append-only
+
+    usage = "INSERT INTO public.llm_usage (project_id, purpose, model, outcome, agent_run_id, prompt_hash) VALUES (%s, 'planning', 'm', %s, %s, %s)"  # fmt: skip
+    conn.execute(usage, (seed.project, "reserved", ok[0], "a" * 64))
+    _expect(conn, errors.CheckViolation, usage, (seed.project, "approved", ok[0], "a" * 64))
+    _expect(conn, errors.CheckViolation, usage, (seed.project, "ok", ok[0], "short"))
+    conn.execute("DELETE FROM public.agent_runs WHERE id = %s", (ok[0],))
+    left = conn.execute("SELECT agent_run_id FROM public.llm_usage").fetchone()
+    assert left == (None,)  # usage outlives its run (accounting is kept)
+    assert conn.execute("SELECT count(*) FROM public.agent_steps").fetchone() == (0,)
+
+
+def test_downgrading_0009_keeps_usage_rows(conn: psycopg.Connection) -> None:
+    _alembic("upgrade", "head")
+    conn.execute("TRUNCATE app_user.users, public.projects CASCADE")
+    conn.execute("INSERT INTO public.llm_usage (purpose, model, input_tokens, outcome) VALUES ('planning', 'm', 5, 'timeout')")  # fmt: skip
+    try:
+        _alembic("downgrade", "0008_finding_groups")
+        assert conn.execute("SELECT input_tokens FROM public.llm_usage").fetchone() == (5,)
+        assert {"agent_runs", "agent_steps"}.isdisjoint(_tables(conn, "public"))
+        cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'llm_usage'").fetchall()}  # fmt: skip
+        assert not cols & {"outcome", "agent_run_id", "prompt_hash", "attempts", "latency_ms"}
+    finally:
+        _alembic("upgrade", "head")
+        conn.execute("TRUNCATE public.llm_usage CASCADE")
+
+
+_DRAFT = "INSERT INTO public.regression_tests (project_id, finding_id, result_id, title, rationale, target_path, framework, code, expected_behavior) VALUES (%s, %s, %s, 't', 'r', 'tests/test_a.py', %s, 'def test_a(): pass', 'e') RETURNING id"  # fmt: skip
+
+
+def test_regression_test_drafts_are_scoped_bounded_and_frozen_from_0009(conn: psycopg.Connection, seed: _Seed) -> None:  # fmt: skip
+    fid = _finding(conn, seed, "fp-regression-0009")
+    _, result = _result_with_case(conn, seed)
+    from_finding = conn.execute(_DRAFT, (seed.project, fid, None, "pytest")).fetchone()
+    from_result = conn.execute(_DRAFT, (seed.project, None, result, "jest")).fetchone()
+    assert from_finding and from_result
+    _expect(conn, errors.CheckViolation, _DRAFT, (seed.project, None, None, "pytest"))  # no subject
+    _expect(conn, errors.CheckViolation, _DRAFT, (seed.project, fid, None, "mocha"))
+    _expect(conn, errors.CheckViolation, "UPDATE public.regression_tests SET code = 'x' WHERE id = %s", (from_finding[0],))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.regression_tests SET evidence_ids = '[\"a\"]' WHERE id = %s", (from_finding[0],))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.regression_tests SET status = 'verified' WHERE id = %s", (from_finding[0],))  # fmt: skip
+    conn.execute("UPDATE public.regression_tests SET status = 'accepted', decided_by = %s, decision_note = 'ok', decided_at = now() WHERE id = %s", (seed.user, from_finding[0]))  # fmt: skip
+    _expect(conn, errors.CheckViolation, "UPDATE public.regression_tests SET status = 'proposed' WHERE id = %s", (from_finding[0],))  # fmt: skip
+    conn.execute("UPDATE public.regression_tests SET status = 'verified' WHERE id = %s", (from_finding[0],))  # fmt: skip
+    long_code = "INSERT INTO public.regression_tests (project_id, finding_id, title, rationale, target_path, framework, code, expected_behavior) VALUES (%s, %s, 't', 'r', 'p.py', 'pytest', %s, 'e')"  # fmt: skip
+    _expect(conn, errors.CheckViolation, long_code, (seed.project, fid, "x" * 20001))
+    conn.execute("DELETE FROM public.test_results WHERE id = %s", (result,))
+    left = conn.execute("SELECT id FROM public.regression_tests").fetchall()
+    assert left == [from_finding]  # the result's own proposal went with it; the finding's stays
+
+
+def test_downgrading_0009_keeps_finding_based_proposals_and_drops_the_rest(conn: psycopg.Connection) -> None:  # fmt: skip
+    _alembic("upgrade", "head")
+    conn.autocommit = False
+    try:
+        seed = _Seed(conn)
+        fid = _finding(conn, seed, "fp-downgrade-0009")
+        _, result = _result_with_case(conn, seed)
+        conn.execute(_DRAFT, (seed.project, fid, None, "pytest"))
+        conn.execute(_DRAFT, (seed.project, None, result, "pytest"))
+        conn.commit()
+    finally:
+        conn.autocommit = True
+    try:
+        _alembic("downgrade", "0008_finding_groups")
+        assert conn.execute("SELECT count(*), count(finding_id) FROM public.regression_tests").fetchone() == (1, 1)  # fmt: skip
+        cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'regression_tests'").fetchall()}  # fmt: skip
+        assert not cols & {"project_id", "result_id", "code", "title", "agent_run_id"}
+        assert {"finding_id", "status", "proposed_by"} <= cols
     finally:
         _alembic("upgrade", "head")
         conn.execute("TRUNCATE app_user.users, public.projects CASCADE")

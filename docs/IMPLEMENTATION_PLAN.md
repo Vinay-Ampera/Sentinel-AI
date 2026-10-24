@@ -730,8 +730,8 @@ This section lists only each stage's status, next action, requirements and accep
 - Findings show confidence, verification state, and limitations.
 
 ### Stage 11 — LangGraph workflows and selective Gemini use
-**Status:** Pending  
-**Next action:** Starts after Stage 10 (owner approval needed).
+**Status:** Completed with the fake provider (all five graphs, the gateway, redaction and evidence filtering are built and tested; one owner-approved real planning request succeeded; other prompts, timeouts and quality are unverified: Q110, Q111, Q115)  
+**Next action:** Owner review and commit (nothing is committed). Apply migrations 0003-0009 to the real database after reviewing them (0009 is written and tested on a disposable database only). Set the real prices for the configured `GEMINI_MODEL` (the one smoke request used placeholders) (`LLM_PRICE_*`) before relying on cost figures. Stage 12 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-24 Stage 11 entries), ADR-0010 (with the Step 2-8 amendments), `architecture/AGENT_WORKFLOWS.md`.
 
 **Work**
 - Implement analysis, planning, investigation, regression-test proposal, and verification graph workflows where justified.

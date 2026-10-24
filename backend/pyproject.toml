@@ -18,6 +18,8 @@ redis = ">=5"
 argon2-cffi = "^25.1.0"
 celery = {version = ">=5.4", extras = ["redis"]}
 kombu = ">=5.6,<5.7"
+langgraph = "^1.2.17"
+google-genai = "^2.33.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8"
@@ -60,6 +62,8 @@ pythonpath = ["src", "tests"]
 "tests/unit/test_pytest_runner.py" = ["E501"]
 "tests/unit/test_bandit_scanner.py" = ["E501"]
 "tests/unit/test_security_scanners.py" = ["E501"]
+"tests/unit/test_llm_gateway_units.py" = ["E501"]
+"tests/unit/test_llm_redaction.py" = ["E501"]
 # Dense detection tables and one-line gap definitions read better unwrapped.
 "src/sentinel_ai/services/analyzer.py" = ["E501"]
 "src/sentinel_ai/services/check_catalog.py" = ["E501"]
@@ -71,6 +75,7 @@ pythonpath = ["src", "tests"]
 "src/sentinel_ai/api/findings.py" = ["E501"]
 "src/sentinel_ai/repositories/findings.py" = ["E501"]
 "src/sentinel_ai/execution/evidence.py" = ["E501"]
+"src/sentinel_ai/integrations/llm/redaction.py" = ["E501"]
 "src/sentinel_ai/execution/docker_executor.py" = ["E501"]
 "src/sentinel_ai/execution/docker_runner.py" = ["E501"]
 "src/sentinel_ai/execution/sandbox_spec.py" = ["E501"]

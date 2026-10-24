@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sentinel_ai.api import (
     admin,
+    agents,
     auth,
     break_glass,
     findings,
@@ -22,6 +23,7 @@ from sentinel_ai.core.logging import configure_logging
 from sentinel_ai.core.middleware import install_middleware
 from sentinel_ai.core.ratelimit import RateLimiter
 from sentinel_ai.db.engine import create_db_engine, create_session_factory
+from sentinel_ai.integrations.llm.factory import build_gateway
 from sentinel_ai.jobs.celery_app import CeleryEnqueuer
 from sentinel_ai.services import dispatcher
 from sentinel_ai.services.artifact_store import ArtifactStore
@@ -44,6 +46,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
+        if not hasattr(app.state, "llm_gateway"):  # tests install a fake-provider gateway
+            app.state.llm_gateway = build_gateway(settings, app.state.session_factory)
         if not hasattr(app.state, "enqueue"):  # tests may install their own
             app.state.enqueue = CeleryEnqueuer(settings)
 
@@ -84,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_error_handlers(app)
     app.state.settings = settings
     app.state.plan_limiter = RateLimiter(plans.PLANS_PER_MINUTE)
+    app.state.agent_limiter = RateLimiter(agents.AGENT_RUNS_PER_MINUTE)
     app.state.login_limiter = RateLimiter(settings.login_ip_max_attempts_per_minute)
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")
@@ -94,4 +99,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(break_glass.router, prefix="/api/v1")
     app.include_router(runs.router, prefix="/api/v1")
     app.include_router(findings.router, prefix="/api/v1")
+    app.include_router(agents.router, prefix="/api/v1")
     return app

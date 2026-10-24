@@ -19,5 +19,8 @@ Backend: pytest, httpx/Starlette TestClient, Ruff, mypy (strict on `src/`). Fron
 ## Running the database tests safely
 Use a throw-away database (never the real one): create `sentinel_ai_test`, export `TEST_DATABASE_URL=postgresql://USER:PASS@HOST/sentinel_ai_test` from an untracked env file, then `cd backend && poetry run pytest`. The suite runs `alembic downgrade base` on that database.
 
+## Model-assisted workflows (Stage 11)
+Automated tests never call a real model: `FakeProvider` replays scripted answers and `FakeClock` drives deadlines, backoff and timeouts without sleeping. They cover redaction, evidence framing, budgets and audit, retries, deadline arithmetic, schema violations, citation checks, degraded outcomes, caching, authorization and the import boundaries. Prompt quality and real-provider behaviour (JSON mode, thinking tokens, latency) need an owner-approved real call and are not measured (Q104, Q110, Q115).
+
 ## Success measures
 Baselines for blueprint §12 measures are undefined (Q22); set in Stage 15.

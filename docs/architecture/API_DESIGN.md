@@ -118,7 +118,8 @@ All errors:
 | `PATCH /findings/{id}` `{assigned_to?}` | Assignment (**not built**, Q77) | run |
 | `POST /findings/{id}/evidence` `{artifact_id,note}` | Attach evidence (**not built**, Q77; scan reports are linked automatically) | run |
 | `POST /findings/{id}/verification` `{state,note}` | A person's judgement: `likely`, `confirmed`, `not_reproduced`, `inconclusive`, with a note (**built**). `confirmed` is rejected (`409 evidence_required`, audited) without an evidence row; the database refuses it too. A scan never sets any of these | run |
-| `POST /findings/{id}/regression-tests` / `POST /regression-tests/{id}/decision` | Propose/accept regression test (accept = plan edit, subject to approval) | run |
+| `POST /projects/{id}/agent-runs`, `GET /projects/{id}/agent-runs[/{run_id}]` | Start / read an agent workflow run (planning, analysis, investigation, regression, verification); detail includes the step trace. As built in Stage 11 (see AGENT_WORKFLOWS) | run / read |
+| `GET /projects/{id}/regression-proposals[/{pid}]`, `POST .../{pid}/decision` | List/read drafted regression tests; accept or reject (records a decision only: nothing is written to the source, committed or run) | read / run |
 | `POST /findings/{id}/verify-fix` → `202` | Verification run | run |
 
 ### Artifacts

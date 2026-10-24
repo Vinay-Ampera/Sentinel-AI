@@ -106,6 +106,24 @@ def _lock_active_project(db: Session, project_id: uuid.UUID) -> projects.Project
     return project
 
 
+def planning_context(
+    db: Session, project_id: uuid.UUID, snapshot_id: uuid.UUID | None, *, lock: bool
+) -> tuple[PlanContext, list[str]]:
+    """The context a plan is built from. ``lock=True`` takes the project row lock that
+    ``store_plan`` requires; ``lock=False`` is a plain read (used while a model call is in
+    flight, so no lock is held across the network)."""
+    if lock:
+        project = _lock_active_project(db, project_id)
+    else:
+        found = projects.get_project(db, project_id)
+        if found is None:
+            raise DomainError(404, "not_found", "Project not found")
+        if found.status != "active":
+            raise DomainError(409, "project_archived", "Archived projects are read-only")
+        project = found
+    return _build_context(db, project, snapshot_id)
+
+
 def _build_context(
     db: Session, project: projects.ProjectRecord, snapshot_id: uuid.UUID | None
 ) -> tuple[PlanContext, list[str]]:
@@ -253,6 +271,28 @@ def create_plan(
     else:
         proposals = _developer_proposals(db, plan_ctx, project_id, tests)
 
+    return store_plan(
+        db, ctx, user, project_id, plan_ctx=plan_ctx, notes=notes, mode=mode, prompt=prompt,
+        proposals=proposals,
+    )  # fmt: skip
+
+
+def store_plan(
+    db: Session,
+    ctx: RequestContext,
+    user: UserRecord,
+    project_id: uuid.UUID,
+    *,
+    plan_ctx: PlanContext,
+    notes: list[str],
+    mode: str,
+    prompt: str | None,
+    proposals: list[Proposal],
+    audit_detail: dict[str, Any] | None = None,
+) -> PlanDetail:
+    """Persist a draft plan from validated proposals (policy routing and target gating are
+    applied here, so no caller can set risk, approval need or status). Caller holds the
+    project lock and commits."""
     policy = policy_service.load_effective(db, project_id)
     gate = authorizations.load_gate_context(db, project_id, policy)
     summary = " ".join(notes) or None
@@ -274,7 +314,7 @@ def create_plan(
         db, ctx, action="plan.create", outcome="success", actor_user_id=user.id,
         project_id=project_id, target_type="plan", target_id=str(plan.id),
         detail={"mode": mode, "version": plan.version, "tests": len(stored),
-                "by_status": dict(Counter(t.status for t in stored))},
+                "by_status": dict(Counter(t.status for t in stored)), **(audit_detail or {})},
     )  # fmt: skip
     return PlanDetail(plan, stored, None)
 

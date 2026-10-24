@@ -161,6 +161,18 @@ class Settings(DatabaseSettings):
     llm_max_tokens_per_run: int = 200_000
     llm_max_cost_usd_per_run: float = 2.0
     llm_max_cost_usd_per_day: float = 20.0
+    # Gateway bounds (ADR-0010). Prices are per million tokens and are *estimates* used for
+    # budgeting (the provider reports tokens, not cost); the defaults are deliberately high
+    # placeholders, so set the real prices of GEMINI_MODEL to budget accurately.
+    llm_price_input_per_mtok_usd: float = 1.25
+    llm_price_output_per_mtok_usd: float = 10.0
+    llm_call_timeout_seconds: float = 30.0
+    llm_graph_deadline_seconds: float = 60.0
+    llm_max_retries: int = 2  # transport retries (timeout / 429 / 5xx); not counting invalid output
+    llm_invalid_output_retries: int = 1
+    llm_retry_backoff_base_seconds: float = 0.5
+    llm_max_prompt_chars: int = 60_000
+    llm_max_output_tokens: int = 2048
 
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
@@ -216,12 +228,27 @@ class Settings(DatabaseSettings):
         "llm_max_tokens_per_run",
         "llm_max_cost_usd_per_run",
         "llm_max_cost_usd_per_day",
+        "llm_price_input_per_mtok_usd",
+        "llm_price_output_per_mtok_usd",
+        "llm_call_timeout_seconds",
+        "llm_graph_deadline_seconds",
+        "llm_retry_backoff_base_seconds",
+        "llm_max_prompt_chars",
+        "llm_max_output_tokens",
     )
     @classmethod
     def _positive(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("must be > 0")
         return value
+
+    @model_validator(mode="after")
+    def _llm_limits(self) -> "Settings":
+        if not 0 <= self.llm_max_retries <= 5 or not 0 <= self.llm_invalid_output_retries <= 2:
+            raise ValueError("LLM_MAX_RETRIES must be 0-5 and LLM_INVALID_OUTPUT_RETRIES 0-2")
+        if self.llm_call_timeout_seconds > self.llm_graph_deadline_seconds:
+            raise ValueError("LLM_CALL_TIMEOUT_SECONDS must be <= LLM_GRAPH_DEADLINE_SECONDS")
+        return self
 
     @model_validator(mode="after")
     def _job_limits(self) -> "Settings":

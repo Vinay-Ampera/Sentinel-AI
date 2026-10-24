@@ -95,6 +95,8 @@ def test_invalid_expired_revoked_sessions_are_rejected(env: Env) -> None:
     s = signed_in(env, user)
     assert s.request("GET", f"{API}/auth/me").status_code == 200
 
+    # Replace, not add: newer Starlette test clients (httpx2) keep both cookies otherwise.
+    s.client.cookies.clear()
     s.client.cookies.set("sentinel_session", "forged-" + uuid.uuid4().hex)
     assert s.request("GET", f"{API}/auth/me").status_code == 401
 

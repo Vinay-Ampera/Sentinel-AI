@@ -698,6 +698,24 @@ def from_prompt(ctx: PlanContext, prompt: str) -> list[Proposal]:
     return out[:MAX_TESTS_PER_PLAN]
 
 
+def from_check_ids(
+    ctx: PlanContext, reasons: dict[str, str], *, origin_note: str
+) -> list[Proposal]:
+    """Proposals for catalog check ids chosen by something other than keywords (the planning
+    workflow's model step). Same rules as ``from_prompt``: only catalog entries that
+    are ``automatic`` are accepted, unknown or developer-only ids are skipped, order is the
+    catalog's, and risk/approval/status come from the catalog and the context, never from the
+    caller. ``reasons`` maps check id -> a short human-readable reason (treated as plain text)."""
+    out: list[Proposal] = []
+    for spec in CATALOG.values():
+        if spec.check_id not in reasons or not spec.automatic or spec.check_id == "custom_script":
+            continue
+        why = f"{origin_note}: {reasons[spec.check_id]}"
+        for target in _targets_for(spec, ctx):
+            out.append(_proposal(spec, ctx, target, "prompt", why=why))
+    return out[:MAX_TESTS_PER_PLAN]
+
+
 # ---- developer-defined tests -------------------------------------------------------
 
 

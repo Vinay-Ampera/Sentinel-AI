@@ -577,14 +577,18 @@ def _fail_first_start(req: ExecutionRequest, n: int) -> ExecutionOutcome | None:
 def test_failed_to_start_retries_are_bounded_and_not_reported_as_test_failures(
     make_env: Callable[..., Env],
 ) -> None:
-    e, dev, s, pid, plan, run_id = setup(make_env, 2, job_max_attempts=2)
+    # A 10 ms backoff lets the retry fall due while deliver() is still draining the queue on a
+    # slow database; a longer one keeps "first delivery retries, second completes" deterministic.
+    e, dev, s, pid, plan, run_id = setup(
+        make_env, 2, job_max_attempts=2, job_retry_backoff_seconds=0.6
+    )
     probe = Probe()
     probe.outcome_for = _fail_first_start
     assert deliver(e, probe) == ["retry"]
     rows = batch_rows(e, run_id)
     assert rows[0][1] == "queued" and rows[0][2] == 2  # attempt 2 is waiting
     assert "retry_scheduled" in event_types(e, run_id) and run_status(e, run_id) == "running"
-    time.sleep(0.2)  # backoff
+    time.sleep(1.5)  # backoff (0.6 s, with jitter headroom)
     assert e.app.state.dispatch() == 1
     assert deliver(e, probe) == ["completed"]
     assert run_status(e, run_id) == "completed"

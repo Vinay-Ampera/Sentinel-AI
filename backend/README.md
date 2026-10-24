@@ -26,7 +26,8 @@ Names, defaults, and placeholders are in `.env.example`; real values go only in 
 | `SESSION_TOKEN_PEPPER` | Sessions (>= 32 random chars; auth endpoints return 503 without it) | yes |
 | `GEMINI_API_KEY` | LLM calls (Stage 11) | yes |
 | `REDIS_URL` | Readiness probe now; Celery (Stage 7) | yes if it has a password |
-| Others (`APP_ENV`, `SESSION_*`, `LLM_*`, `ARTIFACT_*`, `UPLOAD_*`, `ZIP_*`, `CORS_ALLOWED_ORIGINS`) | later stages | no |
+| `GEMINI_MODEL`, `LLM_*` (limits, prices, timeouts, retries; see `docs/architecture/AGENT_WORKFLOWS.md`) | LLM gateway (Stage 11) | no (defaults apply; `GEMINI_MODEL` needed to enable) |
+| Others (`APP_ENV`, `SESSION_*`, `ARTIFACT_*`, `UPLOAD_*`, `ZIP_*`, `CORS_ALLOWED_ORIGINS`) | later stages | no |
 
 ## Configuration loading (Stage 3)
 `sentinel_ai.core.config` loads settings from **process environment variables first, then `backend/.env`** (path-independent; override the file with `SENTINEL_ENV_FILE`). Both the app and Alembic use it, so `DATABASE_URL` in `backend/.env` is all you need: no `set -a` step. Settings are validated at startup (`create_app()` / Alembic); a missing or invalid value stops with a message listing the variable names and reasons, never the values. Examples: `DATABASE_URL: is required`, `LOG_LEVEL: Input should be 'DEBUG', ...`. Secrets are `SecretStr` and are masked in `repr`, logs, and `/health/ready`. In `APP_ENV=production`, `SESSION_TOKEN_PEPPER` (>= 32 chars) and `SESSION_COOKIE_SECURE=true` are mandatory. `postgresql://` URLs are used with the psycopg 3 driver automatically.
