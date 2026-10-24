@@ -10,7 +10,10 @@ from collections.abc import Callable
 
 from sentinel_ai.execution.interface import ExecutionOutcome, ExecutionRequest
 
-NOT_EXECUTED = "Not executed: the sandboxed executor is not available yet (Stage 8)."
+NOT_EXECUTED = (
+    "Not executed: this worker runs the stub executor (JOB_EXECUTOR=stub, the default). "
+    "Start it with JOB_EXECUTOR=docker to run checks in the Docker sandbox."
+)
 
 
 class StubExecutor:

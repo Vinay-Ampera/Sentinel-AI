@@ -143,3 +143,25 @@ def test_redis_password_must_not_be_blank_or_multiline() -> None:
 def test_redis_url_scheme_must_be_redis() -> None:
     with pytest.raises(ValidationError):
         make_settings(redis_url="http://localhost:6379/0", redis_password="pw-123456")
+
+
+# ---- Executor selection (the worker must be started with JOB_EXECUTOR=docker to run checks) --
+
+
+def test_the_stub_reason_names_the_setting_that_enables_real_execution() -> None:
+    assert "JOB_EXECUTOR=docker" in NOT_EXECUTED and "stub" in NOT_EXECUTED
+    assert "Stage 8" not in NOT_EXECUTED  # the sandbox exists; the message must not claim otherwise
+
+
+def test_job_executor_docker_selects_the_sandbox_executor_not_the_stub() -> None:
+    from sentinel_ai.execution.docker_executor import DockerSandboxExecutor
+
+    executor = create_executor(make_settings(job_executor="docker"))
+    assert isinstance(executor, DockerSandboxExecutor)
+    assert not isinstance(executor, StubExecutor)
+
+
+def test_a_stub_worker_never_reports_a_pass_or_a_fail() -> None:
+    req = ExecutionRequest(uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), "semgrep_static", 1, 60)
+    out = StubExecutor().execute(req, lambda: False)
+    assert out.status == "skipped" and out.status not in ("passed", "failed")
