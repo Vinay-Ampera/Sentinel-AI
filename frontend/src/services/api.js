@@ -131,6 +131,32 @@ function checkFindingDetail(f) {
   return f
 }
 
+function checkAgentRun(r) {
+  const ok =
+    r &&
+    typeof r.id === 'string' &&
+    typeof r.workflow === 'string' &&
+    typeof r.status === 'string' &&
+    (r.result === null || r.result === undefined || typeof r.result === 'object') &&
+    (r.steps === null || r.steps === undefined || (Array.isArray(r.steps) && r.steps.every((s) => s && typeof s.seq === 'number' && typeof s.node === 'string')))
+  if (!ok) throw bad('agent run')
+  return r
+}
+
+function checkProposal(p) {
+  const ok =
+    p &&
+    typeof p.id === 'string' &&
+    typeof p.status === 'string' &&
+    typeof p.title === 'string' &&
+    typeof p.code === 'string' &&
+    Array.isArray(p.risk_flags) &&
+    Array.isArray(p.overlap) &&
+    Array.isArray(p.evidence_ids)
+  if (!ok) throw bad('regression proposal')
+  return p
+}
+
 // Evidence is untrusted text from a sandbox: fetched as text, never rendered as HTML, and
 // shortened for display (the full file stays downloadable).
 const EVIDENCE_LIMIT = 200_000
@@ -350,6 +376,22 @@ export const api = {
     const data = await request('GET', `/projects/${projectId}/findings${q ? `?${q}` : ''}`)
     if (!Array.isArray(data)) throw bad('findings')
     return data.map(checkFinding)
+  },
+  // Assistant (Stage 11). A run's text fields come from a model and are only ever shown as text.
+  async listAgentRuns(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/agent-runs`), 'agent runs').map(checkAgentRun)
+  },
+  async getAgentRun(projectId, runId) {
+    return checkAgentRun(await request('GET', `/projects/${projectId}/agent-runs/${runId}`))
+  },
+  async createAgentRun(projectId, body) {
+    return checkAgentRun(await request('POST', `/projects/${projectId}/agent-runs`, body))
+  },
+  async listRegressionProposals(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/regression-proposals`), 'regression proposals').map(checkProposal)
+  },
+  async decideRegressionProposal(projectId, proposalId, decision, note) {
+    return checkProposal(await request('POST', `/projects/${projectId}/regression-proposals/${proposalId}/decision`, { decision, note: note || null }))
   },
   async getFinding(findingId) {
     return checkFindingDetail(await request('GET', `/findings/${findingId}`))

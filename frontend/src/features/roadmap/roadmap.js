@@ -2,13 +2,6 @@
 // available; the page that shows it has no controls. Keep it in step with the plan.
 export const ROADMAP = [
   {
-    stage: 11,
-    title: 'AI-assisted workflows',
-    note: 'Paused until the project owner approves it.',
-    text: 'Investigation of failures, proposed regression tests and fix verification, using model output that is filtered, validated and recorded.',
-    items: ['Evidence is filtered and redacted before any model sees it', 'Model output can never override permissions, approvals or sandbox rules', 'Time, retry and cost limits, with usage recorded'],
-  },
-  {
     stage: 12,
     title: 'Observability and alerts',
     text: 'Bring in logs and traces, correlate them with runs and findings, and turn real failures into proposed tests.',
@@ -42,6 +35,7 @@ export const ROADMAP = [
 
 // Things that exist but have a stated limit today.
 export const LIMITS = [
+  'The assistant (test planning, failure investigation, regression drafts) has been checked with test doubles and one real model request; wider real-model use, answer quality and cost figures are not yet verified.',
   'Browser (Playwright) tests are not built yet.',
   'Semgrep and OWASP ZAP are integrated but have not been verified against the real tools; ZAP is off by default.',
   'Git, localhost and remote sources can be registered but are not analysed or fetched yet.',

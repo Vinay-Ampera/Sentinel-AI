@@ -11,7 +11,10 @@ import HomePage from '../pages/HomePage.jsx'
 import NotFound from '../pages/NotFound.jsx'
 import PlanPage from '../pages/PlanPage.jsx'
 import ProjectAnalysisPage from '../pages/ProjectAnalysisPage.jsx'
+import AgentRunPage from '../pages/AgentRunPage.jsx'
+import ProjectAssistantPage from '../pages/ProjectAssistantPage.jsx'
 import ProjectFindingsPage from '../pages/ProjectFindingsPage.jsx'
+import ProjectProposalsPage from '../pages/ProjectProposalsPage.jsx'
 import ProjectGovernancePage from '../pages/ProjectGovernancePage.jsx'
 import ProjectLayoutPage from '../pages/ProjectLayoutPage.jsx'
 import ProjectOverviewPage from '../pages/ProjectOverviewPage.jsx'
@@ -77,6 +80,9 @@ export default function App({ api = defaultApi }) {
                     <Route path="runs/:runId/results/:resultId" element={<ResultPage />} />
                     <Route path="findings" element={<ProjectFindingsPage />} />
                     <Route path="findings/:findingId" element={<FindingPage />} />
+                    <Route path="assistant" element={<ProjectAssistantPage />} />
+                    <Route path="assistant/:runId" element={<AgentRunPage />} />
+                    <Route path="proposals" element={<ProjectProposalsPage />} />
                     <Route path="governance" element={<ProjectGovernancePage />} />
                   </Route>
                 </Route>

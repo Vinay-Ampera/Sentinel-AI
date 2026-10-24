@@ -2,7 +2,8 @@ import { statusMeta } from '../lib/status.js'
 import Icon from './Icon.jsx'
 import './StatusBadge.css'
 
-// domain: result | run | severity | verification | finding | plan | test | approval | risk.
+// domain: result | run | severity | verification | finding | plan | test | approval | risk |
+// agent | proposal (see lib/status.js for the full list).
 // Shows icon + text label; tone colour is reinforcement only. With showNote the one-line
 // explanation (for example "Infrastructure problem: not a test failure") is shown too.
 export default function StatusBadge({ domain, value, showNote = false }) {

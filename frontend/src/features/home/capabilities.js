@@ -38,7 +38,7 @@ export const CAPABILITIES = [
     level: 'available',
     text: 'Roles, project membership, target authorizations, approval policies and time-limited break-glass access, all enforced by the server and recorded.',
   },
-  { id: 'ai', title: 'AI-assisted investigation and regression tests', level: 'planned', stage: 11, text: 'Evidence-filtered, validated model output for failure investigation and proposed regression tests. Not started.' },
+  { id: 'ai', title: 'AI-assisted investigation and regression tests', level: 'partial', text: 'Suggested test plans, failure investigation and drafted regression tests from stored evidence, filtered and validated, always for a person to review. Not yet verified across real-model use.' },
   { id: 'observability', title: 'Observability and alerts', level: 'planned', stage: 12, text: 'Ingest logs and traces, correlate them with runs, and turn failures into tests.' },
   { id: 'a11y', title: 'Accessibility and LLM security testing', level: 'planned', stage: 13, text: 'Accessibility checks of the applications under test, and tests for prompt-injection and agent risks.' },
   { id: 'reports', title: 'Reports and evidence-grounded chat', level: 'planned', stage: 14, text: 'Reports and questions answered only from recorded evidence.' },

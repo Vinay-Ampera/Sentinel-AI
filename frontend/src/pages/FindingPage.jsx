@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
 import PageHeaderLite from '../components/SectionHeader.jsx'
 import { DataState } from '../components/states.jsx'
+import FindingAssist from '../features/assistant/FindingAssist.jsx'
+import { canRun } from '../features/assistant/labels.js'
 import FindingDetailView from '../features/findings/FindingDetailView.jsx'
 import { useApi } from '../hooks/useApi.js'
 import { useLoad } from '../hooks/useLoad.js'
@@ -23,6 +25,7 @@ export default function FindingPage() {
           <>
             <PageHeaderLite title={finding.title} />
             <FindingDetailView finding={finding} api={api} projectId={project.id} onChanged={setUpdated} />
+            {canRun(project) && project.status === 'active' && <FindingAssist projectId={project.id} findingId={finding.id} api={api} />}
           </>
         )}
       </DataState>

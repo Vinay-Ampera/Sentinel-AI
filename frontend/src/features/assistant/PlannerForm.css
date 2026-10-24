@@ -1,0 +1,4 @@
+/* PlannerForm.jsx styles. */
+.planner-form { display: grid; gap: var(--space-3); max-width: 44rem; }
+.planner-form .field { margin-bottom: 0; }
+.planner-form textarea { width: 100%; font: inherit; }

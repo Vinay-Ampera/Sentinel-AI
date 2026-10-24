@@ -1,0 +1,4 @@
+/* AgentRunDetail.jsx styles. */
+.agent-result { margin-top: var(--space-3); }
+.agent-result h3 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-md, 1rem); }
+.agent-result ul { margin: 0 0 var(--space-3); padding-left: var(--space-4); }

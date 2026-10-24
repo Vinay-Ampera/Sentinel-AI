@@ -102,6 +102,24 @@ const RISK = {
   critical: ['danger', 'alert'],
 }
 
+// A finished assistant run is not a verdict: "partly completed" means a model step was
+// unavailable or refused, and the built-in part of the result is still shown.
+const AGENT = {
+  running: ['info', 'play'],
+  succeeded: ['neutral', 'flag'],
+  degraded: ['warning', 'alert'],
+  failed: ['danger', 'cross'],
+}
+const AGENT_LABEL = { running: 'Running', succeeded: 'Finished', degraded: 'Partly completed', failed: 'Failed' }
+
+// A proposal is text for review: accepting it records a decision, it is never "passed".
+const PROPOSAL = {
+  proposed: ['info', 'dot'],
+  accepted: ['neutral', 'check'],
+  rejected: ['neutral', 'cross'],
+  verified: ['info', 'check'],
+}
+
 const titleCase = (s) => String(s).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
 function lookup(table, labelOf, noteOf = () => '') {
@@ -127,6 +145,8 @@ const DOMAINS = {
   approval: lookup(APPROVAL, titleCase),
   risk: lookup(RISK, (v) => `${titleCase(v)} risk`),
   project: lookup(PROJECT, titleCase),
+  agent: lookup(AGENT, (v) => AGENT_LABEL[v] || titleCase(v)),
+  proposal: lookup(PROPOSAL, titleCase),
   analysis: lookup(ANALYSIS, (v) => (v === 'completed' ? 'Completed' : titleCase(v))),
 }
 
@@ -139,4 +159,4 @@ export function statusMeta(domain, value) {
 }
 
 // Exposed so tests can assert that every known value has a deliberate tone and icon.
-export const STATUS_TABLES = { result: RESULT, run: RUN, severity: SEVERITY_TONE, verification: VERIFY, finding: FINDING, plan: PLAN, test: TEST, approval: APPROVAL, risk: RISK, project: PROJECT, analysis: ANALYSIS }
+export const STATUS_TABLES = { result: RESULT, run: RUN, severity: SEVERITY_TONE, verification: VERIFY, finding: FINDING, plan: PLAN, test: TEST, approval: APPROVAL, risk: RISK, project: PROJECT, analysis: ANALYSIS, agent: AGENT, proposal: PROPOSAL }

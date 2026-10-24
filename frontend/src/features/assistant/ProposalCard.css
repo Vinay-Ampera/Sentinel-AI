@@ -1,0 +1,4 @@
+/* ProposalCard.jsx styles. */
+.proposal-code { overflow: auto; max-height: 24rem; margin: var(--space-3) 0; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.875rem; white-space: pre; }
+.proposal-decision { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.proposal-decision .field { margin-bottom: 0; min-width: 14rem; }
