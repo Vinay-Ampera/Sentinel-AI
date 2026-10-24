@@ -40,8 +40,16 @@ SEVERITY_BY_FINDING = {
     "critical": "high",
 }
 AUDIT_ACTION = {"acknowledged": "alert.acknowledge", "resolved": "alert.resolve"}
-INTERNAL_RULES = frozenset({"run_failed", "finding_reopened"})
+INTERNAL_RULES = frozenset(
+    {"run_failed", "finding_reopened", "llm_cost_spike", "llm_runaway", "llm_error_rate",
+     "run_duration_anomaly"}
+)  # fmt: skip
 MAX_RESULT_REFS = 20
+MIN_MODEL_CALLS_FOR_ERROR_RATE = 5
+RUNAWAY_CALLS_PER_RUN = 12  # model attempts inside one workflow run
+MIN_BASELINE_DAYS = 3
+MIN_BASELINE_RUNS = 3
+MIN_ANOMALY_SECONDS = 30.0
 
 NEXT_ACTIONS = {
     "new_error_group": "Open the group, read the redacted samples and stack, then investigate or reproduce the error before changing anything.",
@@ -50,6 +58,10 @@ NEXT_ACTIONS = {
     "finding_reopened": "Open the finding: a later scan reported it again after it was marked resolved. Review the evidence and the fix.",
     "telemetry_gap": "Check that the application and its log shipper still send events and that the ingest key is valid. No events is not the same as no errors.",
     "ingest_dropping": "Sentinel is refusing events (quota, rate limit or group cap), so counts are incomplete. Review the sender volume and the project limits.",
+    "llm_cost_spike": "Open the assistant runs of the last day, check for loops or unusually large evidence, and compare the estimated cost with your budget. The figure is an estimate (tokens times configured prices).",
+    "llm_runaway": "Look at the assistant runs started in the last hour: a script, a retry loop or repeated requests may be starting workflows. Budgets still apply to every call.",
+    "llm_error_rate": "Check the model configuration, the provider status and the budget limits; failed calls degrade assistant results but never change a finding or a run.",
+    "run_duration_anomaly": "Open the run and compare its checks with earlier runs of the same plan; a longer run can mean more work, a slower environment or a stuck check. It is a measurement, not a verdict.",
     "alert_overflow": "More alerts are open than the project cap. Acknowledge or resolve some; further alerts are only counted here.",
 }
 LIMITS = [
@@ -57,6 +69,7 @@ LIMITS = [
     "Events below warning level and events from tools Sentinel does not receive from are not seen.",
     "External events are reported by the project's own application and can be wrong or forged; they never change a finding, run or verification state.",
     "Redaction is pattern based and can miss unknown secret shapes.",
+    "Resource figures are limited to run durations and model usage; CPU and memory of target applications are not measured, and model costs are estimates (tokens times configured prices).",
 ]
 CAUSE_NOTE = (
     "Sentinel measured the counts and times above. It does not know why this happened; "
@@ -124,6 +137,13 @@ def raise_alert(
     return alert_id
 
 
+def _group_title(prefix: str, group: dict[str, Any]) -> str:
+    """A title that tells alerts apart: the error type and the message pattern (already
+    redacted and normalized), cut to fit. A measurement, not a cause."""
+    what = " ".join(x for x in (group["error_type"], group["message_norm"]) if x)
+    return f"{prefix}: {what}"[:200]
+
+
 def evaluate_groups(
     db: Session, project_id: uuid.UUID, groups: list[dict[str, Any]], now: datetime,
     th: dict[str, float], settings: Settings,
@@ -162,7 +182,7 @@ def evaluate_groups(
             raise_alert(
                 db, settings, project_id, rule="new_error_group", subject_key=f"group:{gid}",
                 severity="high" if group["level_class"] == "fatal" else "medium",
-                title=f"New {group['level_class']} group in {group['service']}",
+                title=_group_title(f"New {group['level_class']} in {group['service']}", group),
                 measured={"events": group["total_count"], "first_seen": group["first_seen"].isoformat(),
                           "window_minutes": th["new_group_window_minutes"], **where},
                 evidence={"group_id": str(gid)}, now=now, group_id=gid,
@@ -170,12 +190,14 @@ def evaluate_groups(
         current, prior = repo.window_counts(db, gid, now)
         baseline = len(prior) >= MIN_BASELINE_BUCKETS
         median = statistics.median(prior) if baseline else None
+        if not baseline and now - group["first_seen"] <= window:
+            continue  # a brand-new group is already covered by new_error_group: one alert, not two
         if current >= th["spike_min_events"] and (
             not baseline or current >= th["spike_ratio"] * float(median or 0)
         ):
             raise_alert(
                 db, settings, project_id, rule="error_rate_spike", subject_key=f"group:{gid}",
-                severity="medium", title=f"Error rate spike in {group['service']}",
+                severity="medium", title=_group_title(f"Error rate spike in {group['service']}", group),
                 measured={"events_this_hour": current, "baseline_available": baseline,
                           "median_previous_hours": median, "ratio_threshold": th["spike_ratio"],
                           "min_events": th["spike_min_events"], **where},
@@ -186,8 +208,10 @@ def evaluate_groups(
 def evaluate_run(
     db: Session, settings: Settings | None, run_id: uuid.UUID, now: datetime | None = None
 ) -> None:
-    """Internal rule: a run ended failed/timed out, or produced failed/errored/timed-out results.
-    Derived from rows Sentinel already holds; no log text is copied."""
+    """Internal rules for a finished run: it ended failed/timed out or produced failed, errored
+    or timed-out results (``run_failed``), or a completed run took far longer than earlier runs
+    of the same plan (``run_duration_anomaly``). Derived from rows Sentinel already holds; no
+    log text is copied."""
     from sqlalchemy import text
 
     now = now or datetime.now(UTC)
@@ -204,18 +228,42 @@ def evaluate_run(
     ):
         return
     failed = repo.failed_results_of_run(db, run_id, MAX_RESULT_REFS)
-    if run.status == "completed" and not failed:
+    if run.status != "completed" or failed:
+        statuses = {str(f["status"]) for f in failed}
+        severity = "medium" if run.status == "failed" or "failed" in statuses else "low"
+        raise_alert(
+            db, settings, run.project_id, rule="run_failed", subject_key=f"run:{run_id}",
+            severity=severity, title="A test run ended with failures",
+            measured={"run_status": run.status, "error_code": run.error_code,
+                      "failed_results": len(failed), "result_statuses": sorted(statuses)},
+            evidence={"run_id": str(run_id), "result_ids": [str(f["id"]) for f in failed]},
+            now=now, run_id=run_id, result_id=failed[0]["id"] if failed else None,
+        )  # fmt: skip
+    if run.status == "completed":
+        _duration_anomaly(db, settings, run.project_id, run_id, now)
+
+
+def _duration_anomaly(
+    db: Session, settings: Settings | None, project_id: uuid.UUID, run_id: uuid.UUID, now: datetime
+) -> None:
+    timing = repo.run_duration_seconds(db, run_id)
+    if timing is None or timing[1] is None:
         return
-    statuses = {str(f["status"]) for f in failed}
-    severity = "medium" if run.status == "failed" or "failed" in statuses else "low"
-    raise_alert(
-        db, settings, run.project_id, rule="run_failed", subject_key=f"run:{run_id}",
-        severity=severity, title="A test run ended with failures",
-        measured={"run_status": run.status, "error_code": run.error_code, "failed_results": len(failed),
-                  "result_statuses": sorted(statuses)},
-        evidence={"run_id": str(run_id), "result_ids": [str(f["id"]) for f in failed]},
-        now=now, run_id=run_id, result_id=failed[0]["id"] if failed else None,
-    )  # fmt: skip
+    plan_id = timing[0]
+    seconds: float = timing[1]
+    prior = repo.previous_run_durations(db, plan_id, run_id, 10)
+    if len(prior) < MIN_BASELINE_RUNS or seconds < MIN_ANOMALY_SECONDS:
+        return
+    median = statistics.median(prior)
+    _, th = policy_thresholds(db, project_id)
+    if median > 0 and seconds >= th["run_duration_ratio"] * median:
+        raise_alert(
+            db, settings, project_id, rule="run_duration_anomaly", subject_key=f"run:{run_id}",
+            severity="low", title="A run took much longer than earlier runs of the same plan",
+            measured={"duration_seconds": round(seconds, 1), "median_previous_seconds": round(median, 1),
+                      "previous_runs_compared": len(prior), "ratio_threshold": th["run_duration_ratio"]},
+            evidence={"run_id": str(run_id), "plan_id": str(plan_id)}, now=now, run_id=run_id,
+        )  # fmt: skip
 
 
 def finding_reopened(
@@ -262,22 +310,75 @@ def close_gap_alert(db: Session, project_id: uuid.UUID) -> None:
 def evaluate_time_rules(
     db: Session, settings: Settings, project_id: uuid.UUID, now: datetime
 ) -> None:
-    """Lazy, idempotent evaluation of rules driven by the absence of events."""
+    """Lazy, idempotent evaluation of rules that are not triggered by one event: silence after
+    activity (only where ingestion is on) and the deterministic model-cost and resource rules."""
     enabled, th = policy_thresholds(db, project_id)
-    if not enabled:
-        return
     repo.project_lock(db, project_id)
-    since_day = (now - timedelta(days=7)).date()
-    active = sum(int(r["accepted"]) for r in repo.stats_since(db, project_id, since_day))
-    last = repo.last_event_time(db, project_id)
-    if active and last is not None and now - last >= timedelta(hours=th["gap_silence_hours"]):
+    if enabled:
+        since_day = (now - timedelta(days=7)).date()
+        active = sum(int(r["accepted"]) for r in repo.stats_since(db, project_id, since_day))
+        last = repo.last_event_time(db, project_id)
+        if active and last is not None and now - last >= timedelta(hours=th["gap_silence_hours"]):
+            raise_alert(
+                db, settings, project_id, rule="telemetry_gap", subject_key="project",
+                severity="info", title="No events received for a while",
+                measured={"last_event_at": last.isoformat(),
+                          "silence_hours": th["gap_silence_hours"], "events_last_7_days": active},
+                evidence={}, now=now,
+            )  # fmt: skip
+    evaluate_model_rules(db, settings, project_id, now, th)
+
+
+def evaluate_model_rules(
+    db: Session, settings: Settings, project_id: uuid.UUID, now: datetime, th: dict[str, float]
+) -> None:
+    """Cost and resource anomalies from ``llm_usage`` and ``agent_runs`` (deterministic rules;
+    every figure is an estimate, and calls that are still reserved are counted as incomplete)."""
+    day = repo.usage_totals(db, project_id, now - timedelta(hours=24))
+    cost = float(day["cost"])
+    prior = repo.daily_cost(db, project_id, now - timedelta(days=8), now - timedelta(hours=24))
+    baseline = len(prior) >= MIN_BASELINE_DAYS
+    median = statistics.median(prior) if baseline else None
+    if cost >= th["cost_spike_min_usd"] and (
+        not baseline or cost >= th["cost_spike_ratio"] * float(median or 0)
+    ):
         raise_alert(
-            db, settings, project_id, rule="telemetry_gap", subject_key="project", severity="info",
-            title="No events received for a while",
-            measured={"last_event_at": last.isoformat(), "silence_hours": th["gap_silence_hours"],
-                      "events_last_7_days": active},
+            db, settings, project_id, rule="llm_cost_spike", subject_key="project",
+            severity="medium", title="Estimated model cost is unusually high",
+            measured={"estimated_cost_usd_24h": round(cost, 4), "cost_is_estimate": True,
+                      "baseline_available": baseline,
+                      "median_daily_estimated_cost_usd": round(median, 4) if median is not None else None,
+                      "ratio_threshold": th["cost_spike_ratio"], "min_usd": th["cost_spike_min_usd"],
+                      "unsettled_calls": int(day["unsettled"])},
             evidence={}, now=now,
         )  # fmt: skip
+    hour = repo.usage_totals(db, project_id, now - timedelta(hours=1))
+    runs = repo.agent_run_counts(db, project_id, now - timedelta(hours=1))
+    if (
+        int(runs["runs"]) >= th["runaway_runs_per_hour"]
+        or int(runs["max_calls_one_run"]) >= RUNAWAY_CALLS_PER_RUN
+    ):
+        raise_alert(
+            db, settings, project_id, rule="llm_runaway", subject_key="project", severity="medium",
+            title="Assistant workflows are running unusually often or retrying a lot",
+            measured={"assistant_runs_last_hour": int(runs["runs"]),
+                      "most_model_attempts_in_one_run": int(runs["max_calls_one_run"]),
+                      "runs_threshold": th["runaway_runs_per_hour"],
+                      "attempts_per_run_threshold": RUNAWAY_CALLS_PER_RUN},
+            evidence={}, now=now,
+        )  # fmt: skip
+    settled = int(hour["ok"]) + int(hour["failed"])
+    if settled >= MIN_MODEL_CALLS_FOR_ERROR_RATE:
+        rate = 100.0 * int(hour["failed"]) / settled
+        if rate >= th["llm_error_rate_percent"]:
+            raise_alert(
+                db, settings, project_id, rule="llm_error_rate", subject_key="project",
+                severity="medium", title="Many model calls are failing",
+                measured={"failed_calls_last_hour": int(hour["failed"]), "settled_calls_last_hour": settled,
+                          "failure_percent": round(rate, 1), "threshold_percent": th["llm_error_rate_percent"],
+                          "blocked_by_budget": int(hour["blocked"])},
+                evidence={}, now=now,
+            )  # fmt: skip
 
 
 def safe_time_rules(
@@ -291,6 +392,29 @@ def safe_time_rules(
     except Exception as exc:
         logger.warning("alert time rules failed (%s)", type(exc).__name__)
         repo.add_stats(db, project_id, now.date(), accepted=0, dropped={}, eval_errors=1)
+
+
+def evaluate_scheduled(
+    session_factory: Any, settings: Settings, now: datetime | None = None
+) -> tuple[int, int]:
+    """Run the time-driven rules for every project that needs them (called by the scheduled job
+    and ``cli evaluate-alerts``). One project's failure never stops the others. Returns
+    (projects evaluated, projects that failed)."""
+    with session_factory() as db:
+        ids = repo.projects_for_scheduled_rules(db)
+    done = failed = 0
+    for project_id in ids:
+        try:
+            with session_factory() as db:
+                evaluate_time_rules(db, settings, project_id, now or datetime.now(UTC))
+                db.commit()
+            done += 1
+        except Exception as exc:
+            failed += 1
+            logger.warning(
+                "scheduled alert evaluation failed for one project (%s)", type(exc).__name__
+            )
+    return done, failed
 
 
 # ---- reading and lifecycle ----------------------------------------------------------------------
@@ -431,7 +555,29 @@ def telemetry_status(db: Session, project_id: uuid.UUID, now: datetime) -> dict[
             dropped[reason] = dropped.get(reason, 0) + int(n)
     counts = repo.telemetry_counts(db, project_id, since)
     groups = max(counts["groups"], 1)
+    usage = repo.usage_totals(db, project_id, since)
+    steps = repo.agent_step_counts(db, project_id, since)
+    runs = repo.agent_run_counts(db, project_id, since)
+    global_rows = policies.global_rows(db)
     return {
+        "thresholds": observability_policy.thresholds(rows, global_rows),
+        "threshold_bounds": {
+            k: list(v) for k, v in observability_policy.effective_bounds(global_rows).items()
+        },
+        "model_usage": {
+            "window_hours": 24,
+            "calls": int(usage["calls"]), "ok": int(usage["ok"]), "failed": int(usage["failed"]),
+            "blocked_by_budget": int(usage["blocked"]), "retries": int(usage["retries"]),
+            "input_tokens": int(usage["input_tokens"]), "output_tokens": int(usage["output_tokens"]),
+            "estimated_cost_usd": round(float(usage["cost"]), 4), "cost_is_estimate": True,
+            "average_latency_ms": round(float(usage["avg_latency_ms"])),
+            "max_latency_ms": int(usage["max_latency_ms"]),
+            "incomplete_calls": int(usage["unsettled"]) + int(usage["no_latency"]),
+            "assistant_runs": int(runs["runs"]), "workflow_steps": int(steps["steps"]),
+            "model_steps": int(steps["model_steps"]),
+            "note": "Costs are estimates (tokens reported by the provider times the configured "
+                    "prices); calls still reserved or without a latency are counted as incomplete.",
+        },
         "ingest_enabled": observability_policy.ingest_enabled(rows),
         "active_keys": repo.count_active_keys(db, project_id),
         "has_events": last is not None,

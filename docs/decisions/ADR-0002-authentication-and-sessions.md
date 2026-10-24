@@ -26,7 +26,7 @@ Stateless JWT access tokens (harder revocation), OAuth/SSO only (not requested),
 - The CSRF token is `HMAC(pepper, "csrf-token:" + session_token)`; only its keyed hash is stored (`csrf_token_hash`), so `GET /auth/me` can re-issue it and it is useless without the session cookie.
 - Cookie and CSRF checks use constant-time comparison; `Origin`, when present on state-changing requests, must be in `CORS_ALLOWED_ORIGINS`.
 - Login failures (unknown, inactive, locked, wrong password) return one identical 401; the reason is audit-only. A dummy Argon2 verify equalises timing for unknown accounts.
-- The client IP is the direct peer address; `X-Forwarded-For` is not trusted until a trusted-proxy setting exists.
+- The client IP is the direct peer address; `X-Forwarded-For` is not trusted unless the operator lists the proxy in `TRUSTED_PROXY_CIDRS` (added in Stage 12; empty by default; then the header is honoured only for requests that arrive from a listed proxy, and the right-most untrusted hop is the client).
 - The per-IP rate limiter is in-process (per worker); the database lockout is the authoritative brute-force control.
 
 ## Amendment (2026-10-24, Stage 12): project ingest keys are the one exception to "no bearer tokens"

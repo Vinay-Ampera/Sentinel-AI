@@ -631,6 +631,9 @@ def test_run_and_queue_timeouts_are_reconciled(make_env: Callable[..., Env]) -> 
     body = s.request("GET", f"{API}/test-runs/{run_id}").json()
     assert body["status"] == "timed_out" and body["error_code"] == "queue_timeout"
     assert [b[1] for b in batch_rows(e, run_id)] == ["cancelled"]
+    # a run that timed out raises an internal alert (ADR-0011); it is a fact, not a cause
+    alert = sql(e, "SELECT rule, severity, measured->>'run_status', measured->>'error_code' FROM public.alerts WHERE run_id = %s", run_id)  # fmt: skip
+    assert alert == [("run_failed", "low", "timed_out", "queue_timeout")]
 
     # Started, then exceeded its own limit between batches: finished batches survive.
     e2, _, s2, pid2, plan2, run2 = setup(
@@ -643,6 +646,7 @@ def test_run_and_queue_timeouts_are_reconciled(make_env: Callable[..., Env]) -> 
     )
     assert reconciler.reconcile(factory(e2), cfg(e2)).runs_timed_out == 1
     assert run_status(e2, run2) == "timed_out"
+    assert sql(e2, "SELECT count(*) FROM public.alerts WHERE run_id = %s AND rule = 'run_failed'", run2) == [(1,)]  # fmt: skip
     assert [b[1] for b in batch_rows(e2, run2)] == ["completed", "cancelled"]
     # The finished batch kept its results; the batch that never started says so explicitly.
     assert sorted(result_statuses(e2, run2)) == ["not_run", "not_run", "skipped", "skipped"]

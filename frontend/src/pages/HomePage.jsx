@@ -1,5 +1,6 @@
 import { ButtonLink } from '../components/Button.jsx'
 import CapabilityGrid from '../features/home/CapabilityGrid.jsx'
+import ObservabilityStatus from '../features/home/ObservabilityStatus.jsx'
 import Hero from '../features/home/Hero.jsx'
 import WorkflowSteps from '../features/home/WorkflowSteps.jsx'
 import { useAuth } from '../hooks/useAuth.js'
@@ -15,13 +16,14 @@ export default function HomePage() {
       <div className="container home-body">
         <WorkflowSteps />
         <CapabilityGrid />
+        <ObservabilityStatus />
         <section className="home-a11y" aria-labelledby="a11y-title">
           <h2 id="a11y-title">Accessibility of this interface</h2>
           <p>
             The interface is built to work with a keyboard, visible focus, labelled controls, Light, Dark and System themes, and reduced-motion settings. Status is always written out in words, never shown by colour alone.
           </p>
           <p className="muted">
-            This describes how the interface is built, not a conformance claim: it has not been through a formal accessibility evaluation. Accessibility testing of the applications you analyze is planned (Stage 13) and is not available yet.
+            This describes how the interface is built, not a conformance claim: it has not been through a formal accessibility evaluation. Accessibility testing of the applications you analyze is planned (validation phase) and is not available yet.
           </p>
         </section>
         {!user && (

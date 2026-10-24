@@ -307,6 +307,7 @@ def test_new_error_group_alerts_once_with_evidence_and_no_cause_claim(lab: Lab) 
     push(lab, raw, [ev("db down", error_type="OperationalError")])
     (a,) = rule_alerts(lab, "new_error_group")
     assert (a["severity"], a["status"], a["source"], a["confidence"]) == ("medium", "open", "external", "observed")  # fmt: skip
+    assert a["title"] == "New error in api: OperationalError db down"  # tells alerts apart
     assert a["cause_status"] == "not_investigated" and a["occurrences"] == 1
     assert a["measured"]["events"] == 3 and a["measured"]["service"] == "api"
     gid = group_id(lab)
@@ -376,10 +377,15 @@ def test_spike_uses_the_baseline_when_there_is_one_and_says_when_there_is_not(la
     (spike,) = rule_alerts(lab, "error_rate_spike")
     assert spike["measured"]["baseline_available"] is True and spike["measured"]["median_previous_hours"] == 2  # fmt: skip
     assert spike["severity"] == "medium" and spike["group_id"] == gid
-    # a brand-new group has no baseline: the absolute threshold applies and the alert says so
+    # a brand-new group has no baseline and is already covered by new_error_group: one alert
     svc_ingest(lab, [ev("brand new")] * 5, base)
-    spikes = rule_alerts(lab, "error_rate_spike")
-    fresh = next(s for s in spikes if s["group_id"] != gid)
+    assert [a for a in rule_alerts(lab, "error_rate_spike") if a["group_id"] != gid] == []
+    assert any(a["measured"]["events"] == 5 for a in rule_alerts(lab, "new_error_group"))
+    # once the group is older than the new-group window, the absolute threshold applies and the
+    # alert says there was no baseline
+    sql(lab.e, "UPDATE public.event_groups SET first_seen = first_seen - interval '2 hours' WHERE message_norm = 'brand new'")  # fmt: skip
+    svc_ingest(lab, [ev("brand new")], base)
+    fresh = next(s for s in rule_alerts(lab, "error_rate_spike") if s["group_id"] != gid)
     assert fresh["measured"]["baseline_available"] is False and fresh["measured"]["median_previous_hours"] is None  # fmt: skip
 
 

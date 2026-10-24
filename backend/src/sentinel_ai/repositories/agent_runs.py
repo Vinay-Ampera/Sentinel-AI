@@ -31,6 +31,7 @@ class AgentRunRecord:
     result: dict[str, Any] | None
     started_at: datetime
     finished_at: datetime | None
+    trace_id: str | None = None  # W3C trace id of this workflow (ADR-0011)
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,8 @@ class AgentStepRecord:
 
 _RUN_COLS = (
     "id, project_id, workflow, subject_type, subject_id, status, degraded_reason, requested_by, "
-    "input_hash, template_version, model, used_llm, cache_hit, result, started_at, finished_at"
+    "input_hash, template_version, model, used_llm, cache_hit, result, started_at, finished_at, "
+    "trace_id"
 )
 
 
@@ -54,7 +56,7 @@ def _run(row: Any) -> AgentRunRecord:
     return AgentRunRecord(
         row.id, row.project_id, row.workflow, row.subject_type, row.subject_id, row.status,
         row.degraded_reason, row.requested_by, row.input_hash, row.template_version, row.model,
-        row.used_llm, row.cache_hit, row.result, row.started_at, row.finished_at,
+        row.used_llm, row.cache_hit, row.result, row.started_at, row.finished_at, row.trace_id,
     )  # fmt: skip
 
 

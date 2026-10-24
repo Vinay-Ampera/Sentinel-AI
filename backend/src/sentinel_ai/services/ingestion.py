@@ -36,7 +36,8 @@ FIRST_SAMPLES_KEPT = 5
 TIMESTAMP_PAST = timedelta(hours=24)
 TIMESTAMP_FUTURE = timedelta(minutes=5)
 DROP_REASONS = (
-    "invalid_schema", "level_below_threshold", "quota", "rate_limited", "group_cap", "too_large",
+    "invalid_schema", "level_below_threshold", "duplicate", "quota", "rate_limited", "group_cap",
+    "too_large",
 )  # fmt: skip
 
 
@@ -191,10 +192,23 @@ def _correlate(
             unverified.append(name)
     if unverified:
         verified["unverified"] = unverified
-    if event.environment in ("local", "development", "staging") and "run_id" not in verified:
+    if event.trace_id:
+        # The same W3C trace id as a platform workflow (a run or an assistant run of this
+        # project): correlated by identifier, so it counts as verified, unlike time overlap.
+        run = next(iter(repo.runs_by_trace(db, project_id, event.trace_id)), None)
+        agent = next(iter(repo.agent_runs_by_trace(db, project_id, event.trace_id)), None)
+        if run is not None:
+            verified["trace_run_id"] = str(run["id"])
+        if agent is not None:
+            verified["trace_agent_run_id"] = str(agent["id"])
+    if (
+        event.environment in ("local", "development", "staging")
+        and "run_id" not in verified
+        and "trace_run_id" not in verified
+    ):
         if "run" not in during:  # one lookup per batch: every event shares ``now``
-            run = repo.active_run_at(db, project_id, now)
-            during["run"] = str(run) if run else None
+            active = repo.active_run_at(db, project_id, now)
+            during["run"] = str(active) if active else None
         if during["run"]:
             verified["during_run"] = during["run"]
     return claimed, verified
@@ -239,6 +253,9 @@ def ingest_batch(
             continue
         if event.level not in LEVEL_FLOOR:
             result.dropped["level_below_threshold"] += 1
+            continue
+        if event.event_id is not None and not repo.claim_event_id(db, project_id, event.event_id):
+            result.dropped["duplicate"] += 1  # a retry of an event already accepted
             continue
         if result.accepted >= remaining:
             result.dropped["quota"] += 1

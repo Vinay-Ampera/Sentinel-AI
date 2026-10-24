@@ -15,6 +15,7 @@ import AgentRunPage from '../pages/AgentRunPage.jsx'
 import ProjectAssistantPage from '../pages/ProjectAssistantPage.jsx'
 import ProjectFindingsPage from '../pages/ProjectFindingsPage.jsx'
 import AlertPage from '../pages/AlertPage.jsx'
+import TracePage from '../pages/TracePage.jsx'
 import ProjectAlertsPage from '../pages/ProjectAlertsPage.jsx'
 import ProjectProposalsPage from '../pages/ProjectProposalsPage.jsx'
 import ProjectGovernancePage from '../pages/ProjectGovernancePage.jsx'
@@ -86,6 +87,7 @@ export default function App({ api = defaultApi }) {
                     <Route path="assistant/:runId" element={<AgentRunPage />} />
                     <Route path="alerts" element={<ProjectAlertsPage />} />
                     <Route path="alerts/:alertId" element={<AlertPage />} />
+                    <Route path="traces/:traceId" element={<TracePage />} />
                     <Route path="proposals" element={<ProjectProposalsPage />} />
                     <Route path="governance" element={<ProjectGovernancePage />} />
                   </Route>

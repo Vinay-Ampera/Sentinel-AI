@@ -27,7 +27,7 @@ function CapabilityItem({ item }) {
     <li className="capability">
       <div className="capability-head">
         <h3>{item.title}</h3>
-        <AvailabilityBadge level={item.level} stage={item.stage} />
+        <AvailabilityBadge level={item.level} stage={item.stage} when={item.when} />
       </div>
       <p>{item.text}</p>
     </li>

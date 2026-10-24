@@ -37,6 +37,7 @@ GLOBAL_KEYS = (
     "approval_required_risk_levels",
     "allowed_risk_levels",
     "high_risk_approver_roles",
+    "alert_threshold_bounds",
 )
 PROJECT_KEYS = (
     "production_testing",
@@ -230,7 +231,9 @@ def _uuid_lists(value: Any) -> dict[str, list[str]]:
     return out
 
 
-def validate_value(key: str, value: Any, *, project_scope: bool) -> Any:
+def validate_value(
+    key: str, value: Any, *, project_scope: bool, global_rows: dict[str, Any] | None = None
+) -> Any:
     if key not in (PROJECT_KEYS if project_scope else GLOBAL_KEYS):
         raise DomainError(422, "validation_failed", f"Policy key '{key}' is not editable here")
     if key == "production_testing":
@@ -243,7 +246,11 @@ def validate_value(key: str, value: Any, *, project_scope: bool) -> Any:
     if key == "observability_ingest":
         return observability_policy.validate_ingest(value)
     if key == "alert_thresholds":
-        return observability_policy.validate_thresholds(value)
+        return observability_policy.validate_thresholds(
+            value, observability_policy.effective_bounds(global_rows)
+        )
+    if key == "alert_threshold_bounds":
+        return observability_policy.validate_bounds(value)
     allowed = HIGH_RISK_ROLE_CHOICES if key == "high_risk_approver_roles" else ALL_LEVELS
     items = _levels(value, allowed)
     if items is None or (key in ("allowed_risk_levels", "high_risk_approver_roles") and not items):
@@ -291,7 +298,10 @@ def set_policy(
     project_id: uuid.UUID | None,
 ) -> dict[str, Any]:
     """Callers have already checked: global -> POLICY_GLOBAL; project -> manage access."""
-    clean = validate_value(key, value, project_scope=project_id is not None)
+    clean = validate_value(
+        key, value, project_scope=project_id is not None,
+        global_rows=policies.global_rows(db) if project_id is not None else None,
+    )  # fmt: skip
     if project_id is None and not has_permission(role, Permission.POLICY_GLOBAL):
         raise DomainError(403, "forbidden", "You do not have permission to change this policy")
     if project_id is not None:

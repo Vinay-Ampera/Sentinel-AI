@@ -18,11 +18,11 @@ from sentinel_ai.api import (
     projects,
     runs,
 )
+from sentinel_ai.core import limiters
 from sentinel_ai.core.config import Settings, get_settings
 from sentinel_ai.core.errors import install_error_handlers
 from sentinel_ai.core.logging import configure_logging
 from sentinel_ai.core.middleware import install_middleware
-from sentinel_ai.core.ratelimit import RateLimiter
 from sentinel_ai.db.engine import create_db_engine, create_session_factory
 from sentinel_ai.integrations.llm.factory import build_gateway
 from sentinel_ai.jobs.celery_app import CeleryEnqueuer
@@ -89,10 +89,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_middleware(app)
     install_error_handlers(app)
     app.state.settings = settings
-    app.state.plan_limiter = RateLimiter(plans.PLANS_PER_MINUTE)
-    app.state.agent_limiter = RateLimiter(agents.AGENT_RUNS_PER_MINUTE)
-    app.state.login_limiter = RateLimiter(settings.login_ip_max_attempts_per_minute)
-    app.state.ingest_limits = observability.IngestLimits(settings)
+    limiter_client = limiters.build_client(settings)  # None unless RATE_LIMIT_BACKEND=redis
+    app.state.limiter_client = limiter_client
+    app.state.plan_limiter = limiters.make_limiter(limiter_client, "plans", plans.PLANS_PER_MINUTE)
+    app.state.agent_limiter = limiters.make_limiter(
+        limiter_client, "agent_runs", agents.AGENT_RUNS_PER_MINUTE
+    )
+    app.state.login_limiter = limiters.make_limiter(
+        limiter_client, "login", settings.login_ip_max_attempts_per_minute
+    )
+    app.state.ingest_limits = observability.IngestLimits(settings, limiter_client)
     app.state.event_redactor = EventRedactor.from_settings(settings)
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")

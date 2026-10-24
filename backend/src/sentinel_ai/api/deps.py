@@ -5,7 +5,6 @@ session, enforces CSRF + Origin on state-changing methods, checks the role permi
 audits denials. Project scope is checked separately with ``require_project_access``.
 """
 
-import ipaddress
 import uuid
 from collections.abc import Callable, Iterator
 
@@ -13,7 +12,7 @@ from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
-from sentinel_ai.core import security
+from sentinel_ai.core import clientip, security
 from sentinel_ai.core.config import Settings
 from sentinel_ai.core.errors import DomainError
 from sentinel_ai.core.permissions import AccessLevel, Permission, has_permission
@@ -53,12 +52,12 @@ def get_db(request: Request) -> Iterator[Session]:
 
 
 def _peer_ip(request: Request) -> str | None:
-    """Direct peer address if it is a valid IP (unix sockets/test clients yield other text)."""
+    """The client address: the direct peer if it is a valid IP (unix sockets/test clients yield
+    other text), or, only when the peer is a configured trusted proxy, the forwarded client."""
     host = request.client.host if request.client else None
-    try:
-        return str(ipaddress.ip_address(host)) if host else None
-    except ValueError:
-        return None
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    trusted = clientip.parse_networks(settings.trusted_proxy_cidrs) if settings else ()
+    return clientip.client_ip(host, request.headers.get("x-forwarded-for"), trusted)
 
 
 def request_context(request: Request) -> RequestContext:

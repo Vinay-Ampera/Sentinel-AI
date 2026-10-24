@@ -7,10 +7,10 @@ export default function RoadmapList() {
   return (
     <ul className="roadmap-grid">
       {ROADMAP.map((r) => (
-        <li key={r.stage} className="roadmap-item">
+        <li key={r.title} className="roadmap-item">
           <div className="roadmap-head">
             <h3>{r.title}</h3>
-            <AvailabilityBadge level="planned" stage={r.stage} />
+            <AvailabilityBadge level="planned" stage={r.stage} when={r.when} />
           </div>
           {r.note && <p className="roadmap-note">{r.note}</p>}
           <p>{r.text}</p>

@@ -27,6 +27,9 @@ Names, defaults, and placeholders are in `.env.example`; real values go only in 
 | `GEMINI_API_KEY` | LLM calls (Stage 11) | yes |
 | `REDIS_URL` | Readiness probe now; Celery (Stage 7) | yes if it has a password |
 | `GEMINI_MODEL`, `LLM_*` (limits, prices, timeouts, retries; see `docs/architecture/AGENT_WORKFLOWS.md`) | LLM gateway (Stage 11) | no (defaults apply; `GEMINI_MODEL` needed to enable) |
+| `RATE_LIMIT_BACKEND` (`memory` default, or `redis`: limits shared by all API processes through `REDIS_URL`) | API rate limits (Stage 12) | no |
+| `ALERT_EVALUATION_*`, `EVENT_PURGE_*` (scheduled jobs run by `celery beat`; purge is off by default) | Alert evaluation and retention (Stage 12) | no |
+| `TRUSTED_PROXY_CIDRS` (comma-separated networks of reverse proxies whose `X-Forwarded-For` is trusted; empty by default) | Client address behind a proxy (ingestion throttling and audit) | no |
 | `INGEST_*`, `EVENT_*`, `ALERT_OPEN_CAP` (request and event limits, rate limits, quotas, retention days, ingest key lifetime; see `docs/decisions/ADR-0011-observability-alerts-and-failure-to-test-loop.md`) | Observability ingestion and alerts (Stage 12) | no (defaults apply) |
 | Others (`APP_ENV`, `SESSION_*`, `ARTIFACT_*`, `UPLOAD_*`, `ZIP_*`, `CORS_ALLOWED_ORIGINS`) | later stages | no |
 

@@ -11,6 +11,8 @@ from sentinel_ai.core.config import Settings
 RUN_BATCH = "sentinel_ai.run_batch"
 RECONCILE = "sentinel_ai.reconcile"
 DISPATCH = "sentinel_ai.dispatch_pending"
+EVALUATE_ALERTS = "sentinel_ai.evaluate_alerts"
+PURGE_EVENTS = "sentinel_ai.purge_events"
 
 
 def make_celery(settings: Settings, *, publisher: bool = False) -> Celery:
@@ -25,6 +27,26 @@ def make_celery(settings: Settings, *, publisher: bool = False) -> Celery:
     if publisher:
         transport["socket_connect_timeout"] = settings.redis_timeout_seconds
         transport["socket_timeout"] = settings.redis_timeout_seconds
+    schedule: dict[str, Any] = {
+        "reconcile": {
+            "task": RECONCILE,
+            "schedule": float(settings.job_reconcile_interval_seconds),
+        },
+        "dispatch": {
+            "task": DISPATCH,
+            "schedule": float(settings.job_reconcile_interval_seconds),
+        },
+    }
+    if settings.alert_evaluation_enabled:
+        schedule["evaluate_alerts"] = {
+            "task": EVALUATE_ALERTS,
+            "schedule": float(settings.alert_evaluation_interval_seconds),
+        }
+    if settings.event_purge_enabled:  # deletes expired observability data: opt-in
+        schedule["purge_events"] = {
+            "task": PURGE_EVENTS,
+            "schedule": float(settings.event_purge_interval_seconds),
+        }
     app.conf.update(
         task_default_queue=settings.job_queue_name,
         task_serializer="json",
@@ -40,16 +62,7 @@ def make_celery(settings: Settings, *, publisher: bool = False) -> Celery:
         task_time_limit=settings.job_batch_timeout_seconds + 2 * settings.job_cancel_grace_seconds,
         timezone="UTC",
         enable_utc=True,
-        beat_schedule={
-            "reconcile": {
-                "task": RECONCILE,
-                "schedule": float(settings.job_reconcile_interval_seconds),
-            },
-            "dispatch": {
-                "task": DISPATCH,
-                "schedule": float(settings.job_reconcile_interval_seconds),
-            },
-        },
+        beat_schedule=schedule,
     )
     return app
 

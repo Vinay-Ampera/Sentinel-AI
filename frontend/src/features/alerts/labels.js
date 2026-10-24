@@ -7,6 +7,10 @@ export const RULE = {
   telemetry_gap: 'No events received',
   ingest_dropping: 'Events being dropped',
   alert_overflow: 'More alerts than the limit',
+  llm_cost_spike: 'Model cost spike (estimated)',
+  llm_runaway: 'Assistant workflows running unusually often',
+  llm_error_rate: 'Model calls failing',
+  run_duration_anomaly: 'Run took unusually long',
 }
 
 export const ruleLabel = (v) => RULE[v] || String(v).replace(/_/g, ' ')
@@ -37,6 +41,7 @@ export const historyLabel = (v) => HISTORY[v] || String(v).replace(/_/g, ' ')
 
 export const DROP_REASON = {
   invalid_schema: 'Invalid event',
+  duplicate: 'Duplicate (already received)',
   level_below_threshold: 'Below warning level',
   quota: 'Daily limit reached',
   rate_limited: 'Rate limited',

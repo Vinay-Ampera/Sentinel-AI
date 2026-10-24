@@ -51,6 +51,7 @@ class RunOut(BaseModel):
     error_code: str | None
     error_summary: str | None
     created_at: datetime
+    trace_id: str | None = None
     progress: ProgressOut | None = None
 
     @classmethod

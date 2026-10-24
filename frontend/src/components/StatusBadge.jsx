@@ -20,20 +20,22 @@ export default function StatusBadge({ domain, value, showNote = false }) {
 }
 
 // Marks a feature that is designed but not built. Never styled like a working control.
-export function PlannedBadge({ stage }) {
+export function PlannedBadge({ stage, when }) {
+  if (when) return <span className="badge badge-planned">{`Planned · ${when}`}</span>
   return <span className="badge badge-planned">{stage ? `Planned · Stage ${stage}` : 'Planned'}</span>
 }
 
-// How far a capability goes today. Used on the public site and the roadmap so "available",
-// "partly available" and "planned" are always worded the same way.
+// How far a capability goes today. Used on the public site and the roadmap so "Available",
+// "Partially available", "Not available" and "Planned" are always worded the same way.
 const AVAILABILITY = {
-  available: { tone: 'success', icon: 'check', label: 'Available now' },
-  partial: { tone: 'warning', icon: 'alert', label: 'Partly available' },
+  available: { tone: 'success', icon: 'check', label: 'Available' },
+  partial: { tone: 'warning', icon: 'alert', label: 'Partially available' },
+  unavailable: { tone: 'neutral', icon: 'minus', label: 'Not available' },
 }
 
-export function AvailabilityBadge({ level, stage }) {
-  if (level === 'planned') return <PlannedBadge stage={stage} />
-  const a = AVAILABILITY[level]
+export function AvailabilityBadge({ level, stage, when }) {
+  if (level === 'planned') return <PlannedBadge stage={stage} when={when} />
+  const a = AVAILABILITY[level] || AVAILABILITY.unavailable // an unknown level never looks favourable
   return (
     <span className={`badge badge-${a.tone}`}>
       <Icon name={a.icon} size={14} />

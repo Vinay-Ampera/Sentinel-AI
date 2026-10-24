@@ -99,6 +99,7 @@ class AgentRunOut(BaseModel):
     result: dict[str, Any] | None
     started_at: datetime
     finished_at: datetime | None
+    trace_id: str | None = None
     steps: list[AgentStepOut] | None = None
 
     @classmethod
@@ -112,6 +113,7 @@ class AgentRunOut(BaseModel):
             model=r.model, plan_id=result.get("plan_id"), check_ids=result.get("check_ids", []),
             source=result.get("source"), message=result.get("message") or result.get("reason"),
             result=r.result, started_at=r.started_at, finished_at=r.finished_at,
+            trace_id=r.trace_id,
             steps=None if steps is None else [AgentStepOut.from_record(s) for s in steps],
         )  # fmt: skip
 

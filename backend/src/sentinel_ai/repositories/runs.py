@@ -22,7 +22,7 @@ TERMINAL = ("completed", "failed", "cancelled", "timed_out")
 _RUN = (
     "id, project_id, plan_id, parent_run_id, kind, status, idempotency_key, requested_by, "
     "timeout_seconds, cancel_requested_at, cancel_requested_by, started_at, finished_at, "
-    "error_code, error_summary, created_at, updated_at"
+    "error_code, error_summary, created_at, updated_at, trace_id"
 )
 _BATCH = (
     "id, run_id, ordinal, status, attempt, max_attempts, timeout_seconds, queue_task_id, "
@@ -54,6 +54,7 @@ class RunRecord:
     error_summary: str | None
     created_at: datetime
     updated_at: datetime
+    trace_id: str | None = None  # W3C trace id of this workflow (ADR-0011)
 
 
 @dataclass(frozen=True)

@@ -179,6 +179,14 @@ class Settings(DatabaseSettings):
     llm_max_prompt_chars: int = 60_000
     llm_max_output_tokens: int = 2048
 
+    # Where API rate limits are counted: "memory" (per process, the default) or "redis" (shared by
+    # every API process through REDIS_URL; falls back to per-process counts if Redis is down).
+    rate_limit_backend: Literal["memory", "redis"] = "memory"
+
+    # Reverse proxies whose X-Forwarded-For is trusted (comma-separated CIDRs). Empty (default):
+    # the direct peer address is the client and the header is ignored (core/clientip.py).
+    trusted_proxy_cidrs: list[str] = []
+
     # --- Observability ingestion and alerts (Stage 12, ADR-0011) ---
     ingest_max_body_kib: int = 256
     ingest_max_events_per_request: int = 100
@@ -191,6 +199,12 @@ class Settings(DatabaseSettings):
     event_sample_retention_days: int = 30
     event_group_retention_days: int = 180
     alert_open_cap: int = 200
+    # Scheduled jobs (run by `celery beat`; see jobs/celery_app.py). Alert evaluation is on by
+    # default; the purge deletes data, so it is OFF until an operator enables it.
+    alert_evaluation_enabled: bool = True
+    alert_evaluation_interval_seconds: int = 300
+    event_purge_enabled: bool = False
+    event_purge_interval_seconds: int = 86_400
     ingest_key_default_days: int = 90
     ingest_key_max_days: int = 365
     ingest_keys_per_project: int = 5
@@ -200,6 +214,29 @@ class Settings(DatabaseSettings):
     def _split_origins(cls, value: Any) -> Any:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("trusted_proxy_cidrs", mode="before")
+    @classmethod
+    def _split_proxies(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def _valid_proxies(cls, value: list[str]) -> list[str]:
+        import ipaddress
+
+        for cidr in value:
+            try:
+                ipaddress.ip_network(cidr, strict=False)
+            except ValueError:
+                raise ValueError(
+                    "TRUSTED_PROXY_CIDRS must be comma-separated IP networks"
+                ) from None
+            if cidr.strip() in ("0.0.0.0/0", "::/0"):
+                raise ValueError("TRUSTED_PROXY_CIDRS must not trust every address")
         return value
 
     @field_validator("cors_allowed_origins")
@@ -278,6 +315,7 @@ class Settings(DatabaseSettings):
             "ingest_events_per_minute", "ingest_failed_auth_per_minute", "event_daily_quota",
             "event_max_groups_per_project", "event_samples_per_group",
             "event_sample_retention_days", "event_group_retention_days", "alert_open_cap",
+            "alert_evaluation_interval_seconds", "event_purge_interval_seconds",
             "ingest_key_default_days", "ingest_key_max_days", "ingest_keys_per_project",
         )  # fmt: skip
         for name in positive:

@@ -5,6 +5,7 @@ import Field from '../components/Field.jsx'
 import PageHeader from '../components/PageHeader.jsx'
 import { DataState } from '../components/states.jsx'
 import GlobalPolicies from '../features/admin/GlobalPolicies.jsx'
+import ThresholdBounds from '../features/admin/ThresholdBounds.jsx'
 import UserDialog from '../features/admin/UserDialog.jsx'
 import UserTable from '../features/admin/UserTable.jsx'
 import { useApi } from '../hooks/useApi.js'
@@ -43,6 +44,7 @@ export default function AdminPage() {
         </DataState>
       </Card>
       <GlobalPolicies />
+      <ThresholdBounds />
       {dialog && <UserDialog key={dialog.user ? dialog.user.id : 'new'} user={dialog.user} onClose={() => setDialog(null)} onSave={save} />}
     </>
   )

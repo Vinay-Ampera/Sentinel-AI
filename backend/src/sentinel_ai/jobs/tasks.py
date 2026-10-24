@@ -15,8 +15,15 @@ from sentinel_ai.core.config import Settings, get_settings
 from sentinel_ai.db.engine import create_db_engine, create_session_factory
 from sentinel_ai.execution.factory import create_executor
 from sentinel_ai.execution.interface import Executor
-from sentinel_ai.jobs.celery_app import DISPATCH, RECONCILE, RUN_BATCH, CeleryEnqueuer
-from sentinel_ai.services import dispatcher, reconciler, worker_runtime
+from sentinel_ai.jobs.celery_app import (
+    DISPATCH,
+    EVALUATE_ALERTS,
+    PURGE_EVENTS,
+    RECONCILE,
+    RUN_BATCH,
+    CeleryEnqueuer,
+)
+from sentinel_ai.services import alerts, dispatcher, event_retention, reconciler, worker_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -76,3 +83,25 @@ def reconcile_jobs() -> int:
 def dispatch_pending_jobs() -> int:
     rt = runtime()
     return dispatcher.dispatch_pending(rt.factory, rt.settings, rt.enqueue)
+
+
+@shared_task(name=EVALUATE_ALERTS)  # type: ignore[untyped-decorator]
+def evaluate_alert_rules() -> int:
+    """Time-driven alert rules (silence after activity, model cost and runaway rules) for the
+    projects that need them. Returns the number of projects evaluated."""
+    rt = runtime()
+    done, failed = alerts.evaluate_scheduled(rt.factory, rt.settings)
+    if failed:
+        logger.warning("alert evaluation: %d project(s) failed", failed)
+    return done
+
+
+@shared_task(name=PURGE_EVENTS)  # type: ignore[untyped-decorator]
+def purge_expired_events() -> int:
+    """Delete expired observability data (ADR-0011 retention). Only scheduled when
+    EVENT_PURGE_ENABLED is true; returns the number of rows deleted."""
+    rt = runtime()
+    counts = event_retention.purge(rt.factory, rt.settings, dry_run=False)
+    total = sum(counts.values())
+    logger.info("purged expired events: %s", counts)
+    return total

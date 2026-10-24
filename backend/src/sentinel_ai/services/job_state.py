@@ -147,7 +147,7 @@ def _allowed_final(status: str, target: str) -> bool:
     }.get(status, set())
 
 
-def _raise_run_alert(db: Session, run_id: uuid.UUID) -> None:
+def raise_run_alert(db: Session, run_id: uuid.UUID) -> None:
     """Internal alert for a failed run (ADR-0011). Best effort in a savepoint: an alerting
     problem must never fail or roll back the run's own transition."""
     try:
@@ -211,5 +211,5 @@ def finalize_run(db: Session, run_id: uuid.UUID, *, worker_id: str | None = None
         target_id=str(run_id),
         detail={"status": target},
     )
-    _raise_run_alert(db, run_id)
+    raise_run_alert(db, run_id)
     return target

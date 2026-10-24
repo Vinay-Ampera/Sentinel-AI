@@ -10,8 +10,6 @@ import argparse
 import getpass
 import sys
 
-from sqlalchemy import text
-
 from sentinel_ai.core.config import ConfigError, Settings, load_settings
 from sentinel_ai.db.engine import create_db_engine, create_session_factory
 from sentinel_ai.services import alerts, event_retention, users
@@ -79,36 +77,20 @@ def purge_events(dry_run: bool) -> int:
 
 
 def evaluate_alerts() -> int:
-    """Run the time-driven alert rules (telemetry gap) for every project with ingestion on,
-    for cron use: there is no scheduler in the application (ADR-0011, Q125)."""
+    """Run the time-driven alert rules once for every project that needs them (the same code the
+    scheduled job runs; useful from cron when ``celery beat`` is not used)."""
     try:
         settings = load_settings(Settings)
     except ConfigError as exc:
         print(exc, file=sys.stderr)
         return 2
     engine = create_db_engine(settings)
-    checked = 0
     try:
-        factory = create_session_factory(engine)
-        with factory() as db:
-            ids = [
-                r.project_id
-                for r in db.execute(
-                    text(
-                        "SELECT project_id FROM public.policies WHERE scope = 'project' "
-                        "AND key = 'observability_ingest' AND (value ->> 'enabled') = 'true'"
-                    )
-                )
-            ]
-        for project_id in ids:
-            with factory() as db:
-                alerts.safe_time_rules(db, settings, project_id)
-                db.commit()
-            checked += 1
+        done, failed = alerts.evaluate_scheduled(create_session_factory(engine), settings)
     finally:
         engine.dispose()
-    print(f"Evaluated time rules for {checked} project(s).")
-    return 0
+    print(f"Evaluated time rules for {done} project(s); {failed} failed.")
+    return 1 if failed else 0
 
 
 def main(argv: list[str] | None = None) -> int:

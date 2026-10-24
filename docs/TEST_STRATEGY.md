@@ -18,6 +18,12 @@ Backend: pytest, httpx/Starlette TestClient, Ruff, mypy (strict on `src/`). Fron
 
 - **Observability (Stage 12):** `tests/unit/test_event_ingest_units.py` (fingerprints, event schema, redaction parity with the gateway redactor, hostile-input timing, thresholds, key format) and `tests/integration/test_observability.py` (key lifecycle and storage, off-by-default, identical 401s, cookies ignored, limits and drops, redaction in the database, grouping and sample caps, every alert rule, correlation, authorization matrix and audit, telemetry disclosure, internal alerts, alert-to-investigation/regression with the fake provider, retention); frontend `tests/alerts.test.jsx` plus axe cases.
 
+- **Stage 12 completion:** `tests/unit/test_stage12_completion_units.py` (client address behind proxies, OTLP mapping, organization bounds) and `tests/integration/test_stage12_completion.py` (de-duplication, organization bounds, throttling, OTLP end to end, trace view, model usage, cost/resource rules). A lab check on a live server with a purpose-built application and a real headless-Chrome run with axe at two widths were done once by hand (results in PROJECT_TRACKER; not part of the automated suite).
+
+- **Stage 12 closing pass:** `tests/integration/test_shared_limiter.py` (needs `TEST_REDIS_URL`; shared budget across two limiter instances, window roll-over, fallback with Redis down and no URL in logs, flags, opt-in wiring) and `tests/integration/test_scheduled_jobs.py` (beat schedule, evaluation and purge services, task bodies, one failing project); frontend `alerts.test.jsx` covers the organization limits editor and the trace page. By hand (results in PROJECT_TRACKER): two real API processes sharing one Redis budget, a real Celery worker and beat running both jobs, and a headless-Chrome audit plus real-click run.
+
+- **Environment example file:** `tests/unit/test_env_example.py` parses `backend/.env.example` (or `ENV_EXAMPLE_PATH`) and fails on a setting documented twice, a missing Stage 12 key, a name that is not a real setting, a default the validators reject, or a value on a secret-named line.
+
 ## Running the database tests safely
 Use a throw-away database (never the real one): create `sentinel_ai_test`, export `TEST_DATABASE_URL=postgresql://USER:PASS@HOST/sentinel_ai_test` from an untracked env file, then `cd backend && poetry run pytest`. The suite runs `alembic downgrade base` on that database.
 

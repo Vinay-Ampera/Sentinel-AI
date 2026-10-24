@@ -39,10 +39,10 @@ export const CAPABILITIES = [
     text: 'Roles, project membership, target authorizations, approval policies and time-limited break-glass access, all enforced by the server and recorded.',
   },
   { id: 'ai', title: 'AI-assisted investigation and regression tests', level: 'partial', text: 'Suggested test plans, failure investigation and drafted regression tests from stored evidence, filtered and validated, always for a person to review. Not yet verified across real-model use.' },
-  { id: 'observability', title: 'Observability and alerts', level: 'partial', text: 'Applications push structured error events; Sentinel groups and redacts them, raises measured alerts with fixed rules you can tune, and lets you start an investigation or a drafted test from an alert. Traces and metrics are not ingested, and the thresholds are untested on real telemetry.' },
-  { id: 'a11y', title: 'Accessibility and LLM security testing', level: 'planned', stage: 13, text: 'Accessibility checks of the applications under test, and tests for prompt-injection and agent risks.' },
-  { id: 'reports', title: 'Reports and evidence-grounded chat', level: 'planned', stage: 14, text: 'Reports and questions answered only from recorded evidence.' },
-  { id: 'regression', title: 'Regression and fix verification', level: 'planned', stage: 15, text: 'Re-run checks to confirm a fix and compare runs.' },
+  { id: 'observability', title: 'Observability and alerts', level: 'partial', text: 'Applications push structured error events (or OpenTelemetry logs); Sentinel groups and redacts them and raises measured alerts. Some parts are available and some are not: see "Observability and alerts: what works today" below for each feature, its setup and its limits.' },
+  { id: 'a11y', title: 'Accessibility and LLM security testing', level: 'planned', when: 'validation phase', text: 'Accessibility checks of the applications under test, and tests for prompt-injection and agent risks.' },
+  { id: 'reports', title: 'Reports and evidence-grounded chat', level: 'planned', stage: 13, text: 'Reports and questions answered only from recorded evidence.' },
+  { id: 'regression', title: 'Regression and fix verification', level: 'planned', stage: 14, text: 'Re-run checks to confirm a fix and compare runs.' },
 ]
 
 export const WORKFLOW = [

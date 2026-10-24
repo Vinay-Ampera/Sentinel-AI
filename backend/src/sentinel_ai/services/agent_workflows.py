@@ -127,6 +127,8 @@ def _execute(
     _finish(rt, run_id, status, reason, state, make_result, template_version)
     _audit(db, ctx, user, project_id, run_id, workflow, status, reason)
     db.commit()
+    alerts.safe_time_rules(db, rt.settings, project_id)  # cost and runaway rules; never raises
+    db.commit()
     with rt.session_factory() as s:
         run = agent_runs.get_run(s, project_id, run_id)
         steps = agent_runs.list_steps(s, run_id)

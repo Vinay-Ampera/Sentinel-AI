@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import Alert from '../../components/Alert.jsx'
 import Card from '../../components/Card.jsx'
 import KeyValueList from '../../components/KeyValueList.jsx'
@@ -34,7 +35,8 @@ export default function SamplesPanel({ projectId, groupId, api }) {
           {g.samples.map((s) => (
             <div key={s.id} className="sample">
               <p className="sample-head"><strong>{formatDateTime(s.received_at)}</strong>{s.release ? ` · release ${s.release}` : ''}</p>
-              <pre className="sample-text" tabIndex={0} aria-label={`Reported event from ${formatDateTime(s.received_at)}`}>{[s.message, s.stack].filter(Boolean).join('\n\n')}</pre>
+              <pre className="sample-text" role="group" tabIndex={0} aria-label={`Reported event from ${formatDateTime(s.received_at)}`}>{[s.message, s.stack].filter(Boolean).join('\n\n')}</pre>
+              {s.trace_id && <p className="muted">Trace <Link to={`/projects/${projectId}/traces/${s.trace_id}`}>{s.trace_id}</Link>: view the events and workflows that share it.</p>}
               {s.correlation && s.correlation.during_run && <p className="muted">Occurred while a test run was active (shown for context, not as a cause).</p>}
               {s.timestamp_untrusted && <p className="muted">The application's own timestamp was not trusted; the time shown is when Sentinel received it.</p>}
             </div>

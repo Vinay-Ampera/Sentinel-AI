@@ -677,6 +677,7 @@ This section lists only each stage's status, next action, requirements and accep
 ### Stage 8 — Sandboxed execution foundation
 **Status:** Completed  
 **Next action:** Owner review and commit; build the runner image (`make -C backend sandbox-image`); apply migrations 0003-0005 to the real database after review (Stage 8 adds none). Enable only deliberately with `JOB_EXECUTOR=docker`. Stage 9 not started. Evidence: PROJECT_TRACKER section 7 (2026-10-23, Stage 8) and `docs/architecture/SANDBOX_THREAT_MODEL.md`.
+**Operational note (2026-10-24):** runs showing every check `skipped` ("stub executor") mean the worker was started without `JOB_EXECUTOR=docker`; it is not a sandbox defect. The stub's skip reason now says so. `pytest_unit` additionally needs `SANDBOX_ALLOW_PROJECT_CODE=true` plus `SANDBOX_ACCEPT_SHARED_KERNEL=true` (or `SANDBOX_RUNTIME`), otherwise it is `blocked`. See PROJECT_TRACKER 2026-10-24.
 
 **Work**
 - Create a dedicated sandbox executor interface.
@@ -748,10 +749,31 @@ This section lists only each stage's status, next action, requirements and accep
 - Usage/cost metadata is recorded where provider data allows.
 
 ### Stage 12 — Observability, alerts, and failure-to-test loop
-**Status:** Completed (all eight steps built and tested with the fake provider and a disposable database; thresholds, fingerprint grouping and draft eligibility are unmeasured on real telemetry: Q128, Q130, Q133; the new screens were not opened in a real browser: Q140)  
-**Next action:** Owner review and commit (nothing is committed). Q123 and Q142 are approved (ADR-0002 amended). Review migrations 0003-0010 using DATABASE_SCHEMA "Pre-apply review" and apply them yourself (never automatic; Q141). Paste the new settings from PROJECT_TRACKER into `backend/.env.example` (Claude cannot edit it). Operators must schedule `cli purge-events` and `cli evaluate-alerts` themselves (Q125, Q70). Stage 13 not started. Evidence: PROJECT_TRACKER section 7 (Stage 12 entries), ADR-0011 (with the implementation amendments), SECURITY_AND_SAFETY "Observability and alerts".
+**Status:** **Completed** (2026-10-24, with documented limitations). Every acceptance criterion below is met and covered by passing tests (backend 958 passed, frontend 230 passed, plus the live lab and real-browser checks recorded in PROJECT_TRACKER). The limitations below are not hidden: they are carried into the validation phase, Stage 15 or an owner action, and the stage should not be read as "verified on real production telemetry".  
+**Owner report (not verified by Claude), 2026-10-24:** migration `0011_trace_dedup_cost_alerts` was applied to the real database, `alembic current` reports head, and the health check passes. `backend/.env.example` was edited by the owner; Claude cannot read it (a deny rule in `.claude/settings.json` matches `./**/.env.*`), so run `cd backend && poetry run pytest tests/unit/test_env_example.py -q` to confirm it has no duplicates and every Stage 12 key is a real setting.  
+**Next action:** none for Stage 12 beyond the carry-overs below. Stage 13 starts only on the owner's approval; it is not started.
+
+**Status by category (2026-10-24)**
+- *Implemented and tested* (automated; disposable PostgreSQL and a real throwaway Redis; fake provider): ingestion with keys, limits, schema, redaction and de-duplication; grouping; every alert rule including cost/resource; correlation by verified ids and by trace id; trace view; OTLP/HTTP JSON logs; organization threshold bounds and their editor; trusted-proxy client address and the known-key throttle exemption; the Redis-shared limiter (`RATE_LIMIT_BACKEND=redis`, fallback when Redis is down); scheduled jobs (`evaluate_alerts` on by default, `purge_events` opt-in); alert API, lifecycle and audit; failure-to-test loop; frontend Alerts tab, alert page, trace page, ingestion setup and organization limits editor; a test that checks an environment example file for duplicates, typos and secret values.
+- *End-to-end verified on a live system (lab, not production)*: two real API processes sharing one Redis failed-key budget; a real Celery worker and beat over a real Redis raised a cost alert and purged 20 expired samples with no API call; a live server with a purpose-built program (188 real-exception events, 11 classes) grouped without mixing and raised 8 alerts for 8 qualifying issues; headless Chrome (light and dark, 1280/390/320 px, axe WCAG 2.0-2.2 A/AA incl. real contrast) on the alerts list, alert page, trace page, key table, model-usage panel and organization limits editor: 0 violations, no overflow; 15/15 real-click steps; a stepwise 0002-to-0011 migration rehearsal on a seeded database.
+- *Applied by the owner (reported, not verified by Claude)*: migrations through 0011 on the real database, and a passing health check.
+- *Implemented but not verified end-to-end (carried forward)*: see L1-L3 and L6.
+- *Not started or deployment work (carried forward)*: L4-L5.
+
+**Limitations carried forward**
+| # | Limitation | Carried to | Tracked |
+|---|---|---|---|
+| L1 | Grouping and thresholds were measured only on lab telemetry (a purpose-built program, about an hour), never on real logs or across days | Validation phase: run against real or staging logs | Q128, Q130, Q146 |
+| L2 | OTLP is JSON only, verified without a real SDK exporter; no gzip, protobuf, spans or metrics | Validation phase: point a real exporter at it | Q147 |
+| L3 | Cost/resource rules use guessed defaults and estimated costs; "resource" means run duration and model usage only | Validation phase: tune on real usage after `LLM_PRICE_*` is set | Q148, Q150 |
+| L4 | The Redis limiter is a fixed window with a per-process fallback; the default stays in-process | Stage 15: choose the backend per deployment | Q136, Q155 |
+| L5 | Nothing in the repository starts `celery beat` (no Compose service or unit file) | Stage 15: add it to the deployment definition | Q154 |
+| L6 | Real-browser checks covered Chrome only, no screen reader, and are not the Playwright/axe pass | Validation phase | Q140 |
+| L7 | `.env.example` and the real-database migrations | **Done by the owner** (reported); Claude could not verify `.env.example` | Q141 |
 
 **Steps** (all done 2026-10-24): 1 design + ADR-0011 · 2 event model and ingestion (migration 0010, ingest keys, redaction, caps) · 3 deterministic detection and thresholds · 4 correlation and internal failure sources · 5 alert API, acknowledgement, audit · 6 failure-to-test loop (alert subject for the investigation and regression graphs) · 7 frontend Alerts tab · 8 final checks and security review.
+
+**Acceptance evidence** (test names in `backend/tests/integration/test_observability.py` unless noted; all run against a disposable database with the fake provider): *alerts show evidence and claim no root cause* → `test_new_error_group_alerts_once_with_evidence_and_no_cause_claim`, `test_alert_actions...`; *missing telemetry disclosed* → `test_telemetry_status_states_what_was_and_was_not_received`, `test_no_gap_alert_for_a_project_that_never_sent_events...`, frontend `alerts.test.jsx`; *a failure yields a proposal linked to the original event* → `test_an_evidenced_alert_yields_a_linked_text_only_proposal_and_nothing_runs`, `test_a_regression_draft_needs_enough_evidence_and_says_what_is_missing`; *nothing committed or run silently* → the same test (run count unchanged, accept records a decision only), `test_nothing_calls_a_model_because_an_alert_fired`; *sensitive fields redacted* → `test_secrets_are_redacted_before_anything_is_stored`, `tests/unit/test_event_ingest_units.py` (parity with the prompt redactor, hostile-input timing). What these do **not** show: behaviour on real telemetry, in a real browser, behind a proxy, or with a real model (Q128, Q130, Q133, Q136, Q140).
 
 **Work**
 - Define supported log/trace ingestion and instrumentation paths.
@@ -761,37 +783,36 @@ This section lists only each stage's status, next action, requirements and accep
 - Add UI alerts and acknowledgement.
 - Use investigation workflow selectively.
 - Propose regression tests from sufficiently evidenced failures.
+- (From the former Stage 13, Q144) OpenTelemetry correlation for platform workflows and supported target integrations; track model calls, latency, retries, token usage and estimated costs; deterministic cost and resource anomaly rules.
 
 **Acceptance criteria**
+- Telemetry correlates with runs and findings where possible; model-call and cost figures are clearly labelled as estimated or incomplete (former Stage 13 criteria).
 - Alerts show supporting evidence and do not claim a root cause without verification.
 - Missing telemetry is clearly disclosed.
 - A failure can produce a proposed regression test linked to the original event.
 - Tests are not silently committed or run beyond configured permissions.
 - Sensitive log fields are redacted according to policy.
 
-### Stage 13 — Accessibility, LLM/agent security, and telemetry
+### Stage order after Stage 12 (owner decision 2026-10-24)
+The owner fixed this order: Stage 12 observability and alerting → Stage 13 evidence-grounded AI assistant and reporting → Stage 14 regression test proposals and fix verification → **full project testing and validation** → Stage 15 CI/CD and deployment readiness → Stage 16 final documentation and project hardening. Priority: finish the core platform, validate it thoroughly, and only then prepare it for deployment. Nothing after Stage 12 starts without the owner's approval and a plan status of Ongoing.
+
+| New stage | Replaces (old number in this plan before 2026-10-24) |
+|---|---|
+| 13 Evidence-grounded AI assistant and reporting | old Stage 14 |
+| 14 Regression test proposals and fix verification | old Stage 15 (verification part) and the follow-ups of Stage 11 |
+| Validation phase (between 14 and 15) | old Stage 15 (reliability and failure-mode testing) plus the unverified items in OPEN_QUESTIONS |
+| 15 CI/CD and deployment readiness | old Stage 16 (first half) |
+| 16 Final documentation and project hardening | old Stage 16 (documentation) plus final hardening |
+| Stage 12 (OpenTelemetry correlation, model/tool tracking, cost and resource anomalies) and the validation phase (accessibility with axe-core and Playwright, LLM/agent security testing) | old Stage 13, split by the owner's Q144 decision of 2026-10-24; nothing from the blueprint is dropped |
+
+Older documents (ADRs, OPEN_QUESTIONS, the tracker log) use the old numbers; read them with this table. In particular "Stage 13" there means the former accessibility/LLM-security/telemetry stage (now split between Stage 12 and the validation phase), "Stage 14" means the AI assistant and reporting, "Stage 15" means regression verification and reliability, "Stage 16" means CI, deployment and documentation.
+
+### Stage 13 — Evidence-grounded AI assistant and reporting
 **Status:** Pending  
-**Next action:** Starts after Stage 12.
+**Next action:** Owner approval to start (Stage 12 is complete). Not started.
 
 **Work**
-- Integrate axe-core checks into relevant Playwright flows.
-- Add relevant LLM/RAG/agent security test scenarios based on the target project capabilities.
-- Add OpenTelemetry correlation for platform workflows and supported target integrations.
-- Track model/tool calls, latency, retries, token usage, and estimated costs where available.
-- Add resource/cost anomaly detection using deterministic rules first.
-
-**Acceptance criteria**
-- Accessibility results identify affected elements and criteria, with limitations stated.
-- AI/agent security checks are only run when applicable and authorized.
-- Telemetry correlates with runs/findings where possible.
-- Model-call and cost information is clearly labeled when estimated or incomplete.
-
-### Stage 14 — Evidence-grounded chatbot, reporting, and history
-**Status:** Pending  
-**Next action:** Starts after Stage 13.
-
-**Work**
-- Build authorized retrieval over project files, test results, findings, logs, traces, and reports.
+- Build authorized retrieval over project files, test results, findings, logs, alerts and reports (traces only if they are ever ingested).
 - Add evidence links/citations in answers.
 - Build report generation and run comparison.
 - Add user profiles with authorized test history.
@@ -803,40 +824,69 @@ This section lists only each stage's status, next action, requirements and accep
 - Users can only access records and artifacts allowed by their permissions.
 - Reports distinguish planned, executed, skipped, blocked, and failed-to-start checks.
 
-### Stage 15 — Regression verification and reliability hardening
-**Status:** Pending  
-**Next action:** Starts after Stage 14.
+### Stage 14 — Regression test proposals and fix verification
+**Status:** Pending (foundations exist from Stage 11 and 12: drafted proposals stored as text, a verification workflow that prepares a re-scan plan and concludes from recorded attempts, alert-derived proposals)  
+**Next action:** Starts after Stage 13 is approved. Not started.
 
 **Work**
-- Complete fix-verification workflow.
-- Compare repeated runs and reopen regressions.
-- Test queue retries, worker crashes, cancellation races, and sandbox cleanup.
-- Test rate limits, concurrency limits, artifact access, and sensitive-data handling.
-- Review alert noise, false positives, and failure classifications.
+- Decide who may accept a proposal and how an accepted draft becomes a plan item through the normal approval path (Q119, Q107); no silent commits or runs.
+- Complete the fix-verification workflow end to end (Q116, Q120).
+- Compare repeated runs and reopen regressions; build the rerun endpoint if confirmed (Q53, Q72).
+- Link regressions to prior findings, proposals and alerts where possible.
 
 **Acceptance criteria**
 - Verified resolution requires recorded evidence.
 - Regressions are linked to prior findings/tests where possible.
-- Failure modes are tested and documented.
-- Security and reliability issues found in the review are resolved or explicitly tracked.
+- An accepted proposal reaches a run only through plan approval policy.
+- "Failure reproduced / fix resolved" is claimed only from a recorded run of an approved test.
 
-### Stage 16 — CI, Docker, deployment readiness, and documentation
+### Validation phase — full project testing and validation (after Stage 14, before Stage 15)
 **Status:** Pending  
-**Next action:** Starts after Stage 15.
+**Next action:** Starts after Stage 14 is complete. Not started. Until then, record what each earlier stage verified and did not (the OPEN_QUESTIONS items marked unverified feed this phase).
 
 **Work**
-- Add GitHub Actions for frontend/backend checks.
+- Test every existing feature and API endpoint against a real stack: PostgreSQL (migrations 0003 onward applied after the owner's review), Redis and Celery workers (the broker tests that skip without Redis), the Docker sandbox (the Docker tests that skip without it), the security scanners (Semgrep and the dependency audit were run for real; ZAP is lab-only and disabled: Q75), the AI workflows (only one real Gemini request has been made: Q104, Q110, Q111, Q115), the frontend pages in a real browser with axe and keyboard checks (Q68, Q89, Q90, Q140), integrations, and error handling.
+- Failure modes and reliability: queue retries, worker crashes, cancellation races, sandbox cleanup, rate limits, concurrency limits, artifact access, sensitive-data handling, alert noise and false positives (old Stage 15 items), proxy and shared-address behaviour (Q136).
+- **Stage 12 carry-overs:** run the alert pipeline on real or staging application logs and, if possible, a real OpenTelemetry SDK exporter (JSON encoding); tune the cost and duration thresholds on real usage; repeat the real-browser pass with Playwright and a screen reader (limitations L1-L3, L6 in the Stage 12 section).
+- **Accessibility testing (from the former Stage 13):** axe-core checks inside Playwright flows for the Sentinel UI and, where applicable, the applications under test; results identify affected elements and WCAG criteria, state their limitations, and include real contrast and keyboard checks in a real browser (a first manual pass with headless Chrome and axe covered the Stage 12 alert pages only).
+- **LLM/agent security testing (from the former Stage 13):** prompt-injection, data-leak and agent-misuse scenarios against Sentinel's own assistant workflows and, only where applicable and authorized, against target AI applications; scenarios are chosen from the target's capabilities and are never run against an unauthorized target.
+- Fix the issues found and re-verify each fix; track what is not fixed.
+
+**Acceptance criteria**
+- Accessibility results name the affected elements and criteria with limitations stated; AI/agent security checks run only when applicable and authorized (former Stage 13 criteria).
+- A written test matrix lists each area, what was run, the exact result, and what was not run.
+- Every defect found is fixed with a verifying test, or recorded as an open question with its risk.
+- No feature is described as complete without recorded evidence; skipped suites (Docker, Redis) were run for real at least once.
+
+### Stage 15 — CI/CD and deployment readiness
+**Status:** Pending  
+**Next action:** Starts only after the validation phase is complete and approved. Not started.
+
+**Work**
+- Add GitHub Actions for frontend/backend checks (including the database and migration tests).
 - Finalize production and development Dockerfiles.
 - Finalize development Compose and review production Compose reference.
-- Document environment variables, secrets, migrations, backups, health checks, logging, and recovery.
-- Update root/frontend/backend READMEs and architecture diagrams.
-- Perform a clean setup from documented instructions.
+- Review production configuration: secrets, network exposure, persistence, TLS, trusted proxy and shared rate limiting (Q136), backups, health checks, logging, recovery, scheduled jobs for retention and alert evaluation (Q70, Q125).
 
 **Acceptance criteria**
 - CI runs the intended checks and reports failures accurately.
-- Clean checkout can be set up from documentation.
 - Production configuration has been reviewed for secrets, network exposure, persistence, TLS, and operational needs.
 - Deployment claims match what has actually been tested.
+
+### Stage 16 — Final documentation and project hardening
+**Status:** Pending  
+**Next action:** Starts after Stage 15. Not started.
+
+**Work**
+- Document environment variables, secrets, migrations, backups, health checks, logging, and recovery.
+- Update root/frontend/backend READMEs and architecture diagrams.
+- Final security and dependency review; close or explicitly accept every open question.
+- Perform a clean setup from the documented instructions.
+
+**Acceptance criteria**
+- A clean checkout can be set up from documentation.
+- Open questions are resolved or recorded with an owner decision.
+- Security and reliability issues found in the final review are resolved or explicitly tracked.
 
 ## 16b. Frontend Track (separate from the stage list)
 

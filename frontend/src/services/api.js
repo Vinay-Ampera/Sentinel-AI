@@ -318,6 +318,11 @@ export const api = {
     if (!data || typeof data.items !== 'object') throw bad('policies')
     return data.items
   },
+  async getAlertThresholdLimits() {
+    const data = await request('GET', '/admin/alert-threshold-limits')
+    if (!data || !Array.isArray(data.items) || !data.items.every((i) => typeof i.name === 'string' && typeof i.min === 'number' && typeof i.max === 'number' && typeof i.default === 'number')) throw bad('alert threshold limits')
+    return data.items
+  },
   async setGlobalPolicy(key, value) {
     return request('PUT', `/admin/policies/${key}`, { value })
   },
@@ -450,6 +455,11 @@ export const api = {
   },
   async resolveAlert(projectId, alertId, note) {
     return checkAlert(await request('POST', `/projects/${projectId}/alerts/${alertId}/resolve`, { note: note || null }))
+  },
+  async getTrace(projectId, traceId) {
+    const t = await request('GET', `/projects/${projectId}/traces/${traceId}`)
+    if (!isObject(t) || !Array.isArray(t.runs) || !Array.isArray(t.assistant_runs) || !Array.isArray(t.events) || !Array.isArray(t.limits)) throw bad('trace')
+    return t
   },
   async listEventGroups(projectId) {
     return checkItems(await request('GET', `/projects/${projectId}/event-groups`), 'event groups').map(checkGroup)

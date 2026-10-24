@@ -328,6 +328,158 @@ def active_run_at(db: Session, project_id: uuid.UUID, at: datetime) -> uuid.UUID
     return row.id if row else None
 
 
+# ---- event de-duplication ---------------------------------------------------------------------
+
+
+def claim_event_id(db: Session, project_id: uuid.UUID, event_id: uuid.UUID) -> bool:
+    """True when this event id has not been accepted in the last 24 hours (and records it);
+    False for a retry of an event already accepted. An id older than 24 hours is reusable."""
+    row = db.execute(
+        text(
+            "INSERT INTO public.ingest_event_ids (project_id, event_id) VALUES (:p, :e) "
+            "ON CONFLICT (project_id, event_id) DO UPDATE SET received_at = now() "
+            "WHERE public.ingest_event_ids.received_at < now() - interval '24 hours' "
+            "RETURNING 1"
+        ),
+        {"p": project_id, "e": event_id},
+    ).first()
+    return row is not None
+
+
+# ---- traces ---------------------------------------------------------------------------------------
+
+
+def runs_by_trace(db: Session, project_id: uuid.UUID, trace_id: str) -> list[Row]:
+    return _rows(
+        db.execute(
+            text(
+                "SELECT id, status, plan_id, started_at, finished_at, created_at, trace_id "
+                "FROM public.test_runs WHERE project_id = :p AND trace_id = :t"
+            ),
+            {"p": project_id, "t": trace_id},
+        )
+    )
+
+
+def agent_runs_by_trace(db: Session, project_id: uuid.UUID, trace_id: str) -> list[Row]:
+    return _rows(
+        db.execute(
+            text(
+                "SELECT id, workflow, status, started_at, finished_at, trace_id "
+                "FROM public.agent_runs WHERE project_id = :p AND trace_id = :t"
+            ),
+            {"p": project_id, "t": trace_id},
+        )
+    )
+
+
+def samples_by_trace(
+    db: Session, project_id: uuid.UUID, trace_id: str, limit: int, since: datetime
+) -> list[Row]:
+    return _rows(
+        db.execute(
+            text(
+                f"SELECT {_SAMPLE_COLS} FROM public.events WHERE project_id = :p "
+                "AND trace_id = :t AND received_at >= :since "
+                "ORDER BY received_at, seq LIMIT :n"
+            ),
+            {"p": project_id, "t": trace_id, "since": since, "n": limit},
+        )
+    )
+
+
+# ---- model usage and resource figures (estimates; nothing here is a measured bill) -------------
+
+
+def usage_totals(db: Session, project_id: uuid.UUID, since: datetime) -> Row:
+    row = db.execute(
+        text(
+            "SELECT count(*) AS calls, "
+            "count(*) FILTER (WHERE outcome = 'ok') AS ok, "
+            "count(*) FILTER (WHERE outcome = 'blocked_by_budget' OR blocked_by_budget) AS blocked, "
+            "count(*) FILTER (WHERE outcome NOT IN ('ok', 'blocked_by_budget', 'reserved')) AS failed, "
+            "count(*) FILTER (WHERE outcome = 'reserved') AS unsettled, "
+            "count(*) FILTER (WHERE latency_ms IS NULL AND outcome = 'ok') AS no_latency, "
+            "coalesce(sum(input_tokens), 0) AS input_tokens, "
+            "coalesce(sum(output_tokens), 0) AS output_tokens, "
+            "coalesce(sum(estimated_cost_usd), 0) AS cost, "
+            "coalesce(sum(GREATEST(attempts - 1, 0)), 0) AS retries, "
+            "coalesce(avg(latency_ms), 0) AS avg_latency_ms, "
+            "coalesce(max(latency_ms), 0) AS max_latency_ms "
+            "FROM public.llm_usage WHERE project_id = :p AND created_at >= :s"
+        ),
+        {"p": project_id, "s": since},
+    ).one()
+    return dict(row._mapping)
+
+
+def daily_cost(db: Session, project_id: uuid.UUID, since: datetime, until: datetime) -> list[float]:
+    """Estimated cost per UTC day with any usage in [since, until)."""
+    rows = db.execute(
+        text(
+            "SELECT sum(estimated_cost_usd) AS c FROM public.llm_usage WHERE project_id = :p "
+            "AND created_at >= :s AND created_at < :u GROUP BY (created_at AT TIME ZONE 'UTC')::date"
+        ),
+        {"p": project_id, "s": since, "u": until},
+    ).all()
+    return [float(r.c) for r in rows]
+
+
+def agent_run_counts(db: Session, project_id: uuid.UUID, since: datetime) -> Row:
+    row = db.execute(
+        text(
+            "SELECT count(*) AS runs, "
+            "coalesce(max(calls), 0) AS max_calls_one_run FROM ("
+            "SELECT ar.id, (SELECT coalesce(sum(u.attempts), 0) FROM public.llm_usage u "
+            "WHERE u.agent_run_id = ar.id) AS calls FROM public.agent_runs ar "
+            "WHERE ar.project_id = :p AND ar.started_at >= :s) t"
+        ),
+        {"p": project_id, "s": since},
+    ).one()
+    return dict(row._mapping)
+
+
+def agent_step_counts(db: Session, project_id: uuid.UUID, since: datetime) -> Row:
+    row = db.execute(
+        text(
+            "SELECT count(*) AS steps, count(*) FILTER (WHERE s.kind = 'llm') AS model_steps "
+            "FROM public.agent_steps s JOIN public.agent_runs ar ON ar.id = s.agent_run_id "
+            "WHERE ar.project_id = :p AND s.created_at >= :s"
+        ),
+        {"p": project_id, "s": since},
+    ).one()
+    return dict(row._mapping)
+
+
+def run_duration_seconds(db: Session, run_id: uuid.UUID) -> tuple[uuid.UUID, float | None] | None:
+    """(plan id, seconds from start to finish) of a finished run, else None."""
+    row = db.execute(
+        text(
+            "SELECT plan_id, EXTRACT(EPOCH FROM (finished_at - started_at)) AS secs "
+            "FROM public.test_runs WHERE id = :r AND started_at IS NOT NULL "
+            "AND finished_at IS NOT NULL"
+        ),
+        {"r": run_id},
+    ).first()
+    return (row.plan_id, float(row.secs) if row.secs is not None else None) if row else None
+
+
+def previous_run_durations(
+    db: Session, plan_id: uuid.UUID, run_id: uuid.UUID, limit: int
+) -> list[float]:
+    """Durations of earlier completed runs of the same plan (the baseline)."""
+    rows = db.execute(
+        text(
+            "SELECT EXTRACT(EPOCH FROM (finished_at - started_at)) AS secs FROM public.test_runs "
+            "WHERE plan_id = :pl AND id <> :r AND status = 'completed' AND started_at IS NOT NULL "
+            "AND finished_at IS NOT NULL AND finished_at < (SELECT finished_at FROM public.test_runs "
+            "WHERE id = :r) ORDER BY finished_at DESC LIMIT :n"
+        ),
+        {"pl": plan_id, "r": run_id, "n": limit},
+    ).all()
+    return [float(r.secs) for r in rows]
+
+
 # ---- stats ----------------------------------------------------------------------------------
 
 
@@ -407,7 +559,9 @@ def telemetry_counts(db: Session, project_id: uuid.UUID, since: datetime) -> Row
             "SELECT count(*) AS total, count(*) FILTER (WHERE trace_id IS NOT NULL) AS with_trace, "
             "count(*) FILTER (WHERE (correlation ->> 'run_id') IS NOT NULL "
             "OR (correlation ->> 'result_id') IS NOT NULL "
-            "OR (correlation ->> 'finding_id') IS NOT NULL) AS linked FROM public.events "
+            "OR (correlation ->> 'finding_id') IS NOT NULL "
+            "OR (correlation ->> 'trace_run_id') IS NOT NULL "
+            "OR (correlation ->> 'trace_agent_run_id') IS NOT NULL) AS linked FROM public.events "
             "WHERE project_id = :p"
         ),
         {"p": project_id},
@@ -597,6 +751,25 @@ def project_lock(db: Session, project_id: uuid.UUID) -> None:
     )
 
 
+def projects_for_scheduled_rules(db: Session, limit: int = 5000) -> list[uuid.UUID]:
+    """Active projects whose time-driven rules should be evaluated: ingestion is on, or the
+    project used the model or ran an assistant workflow in the last 48 hours."""
+    rows = db.execute(
+        text(
+            "SELECT p.id FROM public.projects p WHERE p.archived_at IS NULL AND ("
+            "EXISTS (SELECT 1 FROM public.policies po WHERE po.scope = 'project' "
+            "AND po.project_id = p.id AND po.key = 'observability_ingest' "
+            "AND (po.value ->> 'enabled') = 'true') "
+            "OR EXISTS (SELECT 1 FROM public.llm_usage u WHERE u.project_id = p.id "
+            "AND u.created_at >= now() - interval '48 hours') "
+            "OR EXISTS (SELECT 1 FROM public.agent_runs a WHERE a.project_id = p.id "
+            "AND a.started_at >= now() - interval '48 hours')) ORDER BY p.id LIMIT :n"
+        ),
+        {"n": limit},
+    ).all()
+    return [r.id for r in rows]
+
+
 # ---- retention -------------------------------------------------------------------------------
 
 
@@ -607,7 +780,7 @@ def purge(
     """Delete expired rows; returns counts (and deletes nothing when ``dry_run``). Alerts and
     groups a regression proposal points to are kept, as are open alerts and their groups."""
     out: dict[str, int] = {}
-    steps = (
+    steps: tuple[tuple[str, str, dict[str, Any]], ...] = (
         ("events", "FROM public.events WHERE received_at < :sb", {"sb": sample_before}),
         (
             "event_buckets",
@@ -634,6 +807,11 @@ def purge(
             {"kb": key_before},
         ),
         ("ingest_stats", "FROM public.ingest_stats WHERE day < :sd", {"sd": stats_before}),
+        (
+            "ingest_event_ids",
+            "FROM public.ingest_event_ids WHERE received_at < now() - interval '2 days'",
+            {},
+        ),
     )
     for name, clause, params in steps:
         if dry_run:

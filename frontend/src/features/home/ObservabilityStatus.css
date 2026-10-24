@@ -1,0 +1,17 @@
+/* ObservabilityStatus.jsx styles: the same bordered grid as the capability cards. */
+.obs-status { padding-block: var(--space-7); border-top: 1px solid var(--border); scroll-margin-top: var(--navbar-height); }
+.obs-legend { display: grid; gap: var(--space-3); margin: var(--space-4) 0; }
+.obs-legend div { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.obs-legend dt { margin: 0; }
+.obs-legend dd { margin: 0; color: var(--text-muted); }
+.obs-group { margin-top: var(--space-5); }
+.obs-group h3 { margin: 0 0 var(--space-2); }
+.obs-list { list-style: none; padding: 0; margin: var(--space-3) 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); border-top: 1px solid var(--border-strong); border-left: 1px solid var(--border-strong); }
+.obs-list-unavailable { border-style: dashed; }
+.obs-item { padding: var(--space-5); border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); }
+.obs-list-unavailable .obs-item { border-right-style: dashed; border-bottom-style: dashed; }
+.obs-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); }
+.obs-head h4 { margin: 0; font-size: var(--text-base); }
+.obs-item p { margin: 0 0 var(--space-2); color: var(--text-muted); }
+.obs-item .obs-detail { color: var(--text); font-size: var(--text-sm, 0.875rem); }
+@media (min-width: 72rem) { .obs-list { grid-template-columns: repeat(2, 1fr); } }

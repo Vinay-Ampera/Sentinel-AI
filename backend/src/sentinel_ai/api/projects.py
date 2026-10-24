@@ -29,6 +29,7 @@ from sentinel_ai.schemas.projects import (
     UpdateProjectRequest,
     UrlSourceRequest,
 )
+from sentinel_ai.services import project_access
 from sentinel_ai.services import projects as service
 from sentinel_ai.services.artifact_store import ArtifactStore
 from sentinel_ai.services.audit import RequestContext
@@ -82,9 +83,12 @@ def list_projects(
 
 @router.get("/projects/{project_id}", dependencies=_VIEW)
 def get_project(
-    project_id: uuid.UUID, _: Principal = _READ, db: Session = Depends(get_db)
+    project_id: uuid.UUID, principal: Principal = _READ, db: Session = Depends(get_db)
 ) -> ProjectOut:
-    return ProjectOut.from_record(service.get_project(db, project_id))
+    # The caller's own access level (a read-only break-glass grant shows as "read"): the UI uses
+    # it only to show or hide controls; the server still decides every action.
+    level = project_access.resolve_access(db, principal.user, project_id)
+    return ProjectOut.from_record(service.get_project(db, project_id), level)
 
 
 @router.patch("/projects/{project_id}", dependencies=_VIEW)
@@ -98,7 +102,7 @@ def update_project(
     project = service.update_project(
         db, ctx, principal.user, project_id, name=body.name, description=body.description
     )
-    return ProjectOut.from_record(project)
+    return ProjectOut.from_record(project, AccessLevel.MANAGE)  # this route needs manage
 
 
 @router.post("/projects/{project_id}/archive", dependencies=_VIEW)
@@ -108,7 +112,8 @@ def archive_project(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(request_context),
 ) -> ProjectOut:
-    return ProjectOut.from_record(service.archive_project(db, ctx, principal.user, project_id))
+    archived = service.archive_project(db, ctx, principal.user, project_id)
+    return ProjectOut.from_record(archived, AccessLevel.MANAGE)  # this route needs manage
 
 
 # ---- members --------------------------------------------------------------------------

@@ -210,3 +210,4 @@ def _time_out_runs(db: Session, settings: Settings, report: ReconcileReport) -> 
                 detail={"reason": code},
             )  # fmt: skip
             report.runs_timed_out += 1
+            job_state.raise_run_alert(db, run_id)  # a timed-out run is a failure worth an alert

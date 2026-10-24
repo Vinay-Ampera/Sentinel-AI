@@ -21,6 +21,7 @@ from sentinel_ai.schemas.plans import (
     PolicyValueRequest,
 )
 from sentinel_ai.services import authorizations as service
+from sentinel_ai.services import observability_policy
 from sentinel_ai.services import policy as policy_service
 from sentinel_ai.services.audit import RequestContext
 from sentinel_ai.services.auth import Principal
@@ -107,6 +108,12 @@ def global_policies(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     return {"items": policy_service.global_rows(db)}
+
+
+@router.get("/admin/alert-threshold-limits")
+def alert_threshold_limits(_: Principal = _GLOBAL_POLICY) -> dict[str, Any]:
+    """The built-in range of every alert threshold, for the organization bounds editor."""
+    return {"items": observability_policy.builtin_limits()}
 
 
 @router.put("/admin/policies/{key}")

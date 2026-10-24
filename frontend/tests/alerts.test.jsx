@@ -2,13 +2,15 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../src/services/api.js'
 import { statusMeta } from '../src/lib/status.js'
-import { fakeApi, project, renderApp } from './helpers.jsx'
+import { admin, fakeApi, project, renderApp } from './helpers.jsx'
 
 const telemetry = (over = {}) => ({
   ingest_enabled: true, active_keys: 1, has_events: true, last_event_at: '2026-10-24T10:00:00Z',
   events_last_24h_by_level: { error: 4 }, events_last_24h_by_environment: { staging: 4 },
   dropped_last_24h: { invalid_schema: 2 }, evaluation_errors_last_24h: 0, groups: 2, share_of_groups_with_stack: 0.5,
   samples_with_trace_id: 0, samples_with_verified_link: 0, summary: 'Events were received; see the counts below and the limits.',
+  thresholds: { new_group_events: 3, cost_spike_min_usd: 0.5 },
+  model_usage: { window_hours: 24, calls: 6, ok: 3, failed: 1, blocked_by_budget: 1, retries: 2, input_tokens: 6000, output_tokens: 1200, estimated_cost_usd: 0.35, cost_is_estimate: true, average_latency_ms: 200, max_latency_ms: 300, incomplete_calls: 1, assistant_runs: 2, workflow_steps: 9, model_steps: 3, note: 'n' },
   limits: ['Sentinel resolves no trace ids, scrapes no metrics and keeps only grouped, redacted samples.', 'External events are reported by the project\'s own application and can be wrong or forged.'],
   ...over,
 })
@@ -204,5 +206,132 @@ describe('status wording', () => {
     expect(statusMeta('alert', 'open').tone).toBe('warning')
     expect(statusMeta('alert', 'resolved').label).toBe('Resolved')
     expect(statusMeta('alert', 'surprise').tone).toBe('neutral') // unknown never looks favourable
+  })
+})
+
+
+describe('cost and resource alerts, model usage and traces', () => {
+  it('labels the new alert kinds and says costs are estimates', async () => {
+    const list = [
+      alert({ id: 'c1', rule: 'llm_cost_spike', source: 'internal', title: 'Estimated model cost is unusually high', group_id: null }),
+      alert({ id: 'c2', rule: 'run_duration_anomaly', source: 'internal', title: 'A run took much longer', severity: 'low', group_id: null }),
+    ]
+    renderApp(api({ listAlerts: vi.fn().mockResolvedValue(list) }), '/projects/p1/alerts')
+    expect(await screen.findByText('Model cost spike (estimated)')).toBeTruthy()
+    expect(screen.getByText('Run took unusually long')).toBeTruthy()
+    expect(screen.getAllByText('Observed by Sentinel')).toHaveLength(2)
+  })
+
+  it('shows model use as an estimate with incomplete records and the thresholds in effect', async () => {
+    renderApp(api(), '/projects/p1/alerts')
+    expect(await screen.findByText(/6 calls \(1 failed, 1 blocked by budget\), 2 retries/)).toBeTruthy()
+    expect(screen.getByText(/about \$0.35/)).toBeTruthy()
+    expect(screen.getByText(/Cost is an estimate/)).toBeTruthy()
+    expect(screen.getByText('Incomplete model call records')).toBeTruthy()
+    expect(screen.getByText(/new group events: 3/)).toBeTruthy()
+  })
+
+  it('names duplicates among the refused events', async () => {
+    const t = telemetry({ dropped_last_24h: { duplicate: 4 } })
+    renderApp(api({ getTelemetryStatus: vi.fn().mockResolvedValue(t) }), '/projects/p1/alerts')
+    expect(await screen.findByText(/Duplicate \(already received\): 4/)).toBeTruthy()
+  })
+
+  it('links a sample to its trace and the trace page lists workflows and events together', async () => {
+    const trace = 'ab'.repeat(16)
+    const g = group({ samples: [{ ...group().samples[0], trace_id: trace }] })
+    const view = {
+      trace_id: trace,
+      runs: [{ id: 'r1', status: 'completed', plan_id: 'pl1', started_at: null, finished_at: null, created_at: '2026-10-24T10:00:00Z', trace_id: trace }],
+      assistant_runs: [{ id: 'ar1', workflow: 'investigation', status: 'succeeded', started_at: '2026-10-24T10:00:00Z', finished_at: null, trace_id: trace, steps: [{ seq: 1, node: 'load_subject', kind: 'deterministic', outcome: 'ok', created_at: '2026-10-24T10:00:00Z' }] }],
+      events: [{ id: 'e1', received_at: '2026-10-24T10:00:01Z', service: 'api', level: 'error', message: 'boom <b>x</b>' }],
+      limits: ['Sharing a trace id shows the events belong to the same operation, not that one caused the other.'],
+    }
+    const getTrace = vi.fn().mockResolvedValue(view)
+    const a = api({ getEventGroup: vi.fn().mockResolvedValue(g), getTrace })
+    renderApp(a, '/projects/p1/alerts/al1')
+    const link = await screen.findByRole('link', { name: trace })
+    expect(link.getAttribute('href')).toBe(`/projects/p1/traces/${trace}`)
+    renderApp(a, `/projects/p1/traces/${trace}`)
+    await waitFor(() => expect(getTrace).toHaveBeenCalledWith('p1', trace))
+    expect((await screen.findAllByText('Workflows with this trace id')).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('link', { name: 'Test run' }).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/not that one caused the other/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('boom <b>x</b>').length).toBeGreaterThan(0) // text, never markup
+  })
+
+  it('shows an unknown trace as an error with a retry', async () => {
+    const getTrace = vi.fn().mockRejectedValue(new ApiError(404, 'not_found', 'Trace not found'))
+    renderApp(api({ getTrace }), `/projects/p1/traces/${'cd'.repeat(16)}`)
+    expect(await screen.findByText(/Trace not found/)).toBeTruthy()
+  })
+})
+
+
+describe('organization alert threshold limits (admin page)', () => {
+  const limits = [
+    { name: 'new_group_events', default: 3, min: 1, max: 100, description: 'Events a new error group needs before it raises an alert' },
+    { name: 'spike_ratio', default: 3, min: 1.5, max: 20, description: 'Times the median that counts as a spike' },
+  ]
+  const policies = (over = {}) => ({ approval_required_risk_levels: ['high'], allowed_risk_levels: ['low'], high_risk_approver_roles: ['admin'], production_testing: { allowed: false }, ...over })
+  const adminApi = (over = {}) => fakeApi({ me: () => Promise.resolve(admin), getAlertThresholdLimits: vi.fn().mockResolvedValue(limits), getGlobalPolicies: vi.fn().mockResolvedValue(policies()), setGlobalPolicy: vi.fn().mockResolvedValue({}), ...over })
+
+  it('shows each built-in range and starts from the saved organization limits', async () => {
+    const a = adminApi({ getGlobalPolicies: vi.fn().mockResolvedValue(policies({ alert_threshold_bounds: { new_group_events: { min: 2, max: 10 } } })) })
+    renderApp(a, '/admin')
+    const table = await screen.findByRole('region', { name: 'Alert threshold limits table' })
+    expect(within(table).getByText('1 to 100 (3)')).toBeTruthy()
+    expect(within(table).getByLabelText('Lowest new group events').value).toBe('2')
+    expect(within(table).getByLabelText('Highest new group events').value).toBe('10')
+    expect(within(table).getByLabelText('Lowest spike ratio').value).toBe('1.5') // never saved: the built-in range
+    expect(screen.getByText(/only narrow a built-in range, never widen it/)).toBeTruthy()
+  })
+
+  it('refuses numbers that are reversed or outside the built-in range before sending anything', async () => {
+    const a = adminApi()
+    renderApp(a, '/admin')
+    const lowest = await screen.findByLabelText('Lowest new group events')
+    fireEvent.change(lowest, { target: { value: '0' } })
+    expect(await screen.findByText(/Stay inside the built-in range 1 to 100/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Save limits' }).disabled).toBe(true)
+    fireEvent.change(lowest, { target: { value: '50' } })
+    fireEvent.change(screen.getByLabelText('Highest new group events'), { target: { value: '5' } })
+    expect(await screen.findByText(/minimum must not exceed the maximum/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Highest new group events'), { target: { value: '' } })
+    expect(await screen.findByText(/Enter both numbers/)).toBeTruthy()
+    expect(a.setGlobalPolicy).not.toHaveBeenCalled()
+  })
+
+  it('saves every limit as numbers and confirms', async () => {
+    const a = adminApi()
+    renderApp(a, '/admin')
+    fireEvent.change(await screen.findByLabelText('Lowest new group events'), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText('Highest new group events'), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save limits' }))
+    await waitFor(() => expect(a.setGlobalPolicy).toHaveBeenCalledWith('alert_threshold_bounds', { new_group_events: { min: 2, max: 10 }, spike_ratio: { min: 1.5, max: 20 } }))
+    expect(await screen.findByText('Alert threshold limits saved')).toBeTruthy()
+  })
+
+  it('resets to the built-in limits', async () => {
+    const a = adminApi({ getGlobalPolicies: vi.fn().mockResolvedValue(policies({ alert_threshold_bounds: { new_group_events: { min: 2, max: 10 } } })) })
+    renderApp(a, '/admin')
+    await screen.findByLabelText('Lowest new group events')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to built-in limits' }))
+    await waitFor(() => expect(a.setGlobalPolicy).toHaveBeenCalledWith('alert_threshold_bounds', { new_group_events: { min: 1, max: 100 }, spike_ratio: { min: 1.5, max: 20 } }))
+  })
+
+  it('shows the server refusal unchanged (only a super admin may change the limits)', async () => {
+    const a = adminApi({ setGlobalPolicy: vi.fn().mockRejectedValue(new ApiError(403, 'forbidden', 'You do not have permission to change this policy')) })
+    renderApp(a, '/admin')
+    fireEvent.click(await screen.findByRole('button', { name: 'Save limits' }))
+    expect(await screen.findByText('You do not have permission to change this policy')).toBeTruthy()
+  })
+
+  it('shows a load error with retry instead of an empty editor', async () => {
+    const getAlertThresholdLimits = vi.fn().mockRejectedValueOnce(new ApiError(500, 'error', 'Failed')).mockResolvedValue(limits)
+    renderApp(adminApi({ getAlertThresholdLimits }), '/admin')
+    const retry = await screen.findAllByRole('button', { name: /try again|retry/i })
+    fireEvent.click(retry[retry.length - 1])
+    expect(await screen.findByLabelText('Lowest new group events')).toBeTruthy()
   })
 })

@@ -42,3 +42,7 @@ The UI is **component-based and page-based**. Reuse before writing: search `src/
 
 ## Alerts (Stage 12)
 - Alerts show what was measured, never a cause: no "root cause" wording, `acknowledged` is "seen" (not fixed), an empty list with no received events says so, and the telemetry panel's limits text is always shown. Reported events are plain text (`<pre>`), labelled "Reported by the application". Ingest keys are displayed once from the create response and never from a list.
+
+## Public availability wording
+- The home page lists features as **Available** (built, tested and checked end to end), **Partially available** (built and tested with a part unverified, opt-in or limited) or **Not available** (not built), from `features/home/observability.js` and `capabilities.js`. Keep them in step with `docs/PROJECT_TRACKER.md` and the plan: never move a feature up a level without recorded evidence, always state what it needs and where it stops, and update `tests/observability-status.test.jsx` (it pins the classification) in the same change.
+

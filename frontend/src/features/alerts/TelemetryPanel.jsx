@@ -10,6 +10,19 @@ function counts(map, label = (k) => k) {
   return entries.length ? entries.map(([k, n]) => `${label(k)}: ${n}`).join(', ') : 'None'
 }
 
+function modelUsageRows(m) {
+  return [
+    {
+      label: 'Model use in the last 24 hours (estimated)',
+      value: `${m.calls} calls (${m.failed} failed, ${m.blocked_by_budget} blocked by budget), ${m.retries} retries, ${m.input_tokens} input and ${m.output_tokens} output tokens, about $${m.estimated_cost_usd.toFixed(2)}. Cost is an estimate from tokens and configured prices.`,
+    },
+    { label: 'Incomplete model call records', value: String(m.incomplete_calls) },
+    { label: 'Assistant workflows in the last 24 hours', value: `${m.assistant_runs} runs, ${m.workflow_steps} steps (${m.model_steps} used the model)` },
+  ]
+}
+
+const thresholdText = (t) => Object.entries(t).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ')
+
 // What Sentinel did and did not receive, so an empty list is never read as "healthy".
 export default function TelemetryPanel({ telemetry }) {
   const t = telemetry
@@ -33,7 +46,9 @@ export default function TelemetryPanel({ telemetry }) {
           { label: 'Alert rule errors in the last 24 hours', value: String(t.evaluation_errors_last_24h ?? 0) },
           { label: 'Error groups with a stack trace', value: `${Math.round((t.share_of_groups_with_stack || 0) * 100)}% of ${t.groups}` },
           { label: 'Samples carrying a trace id', value: String(t.samples_with_trace_id) },
-          { label: 'Samples linked to a run, result or finding (verified)', value: String(t.samples_with_verified_link) },
+          { label: 'Samples linked to a run, result, finding or trace (verified)', value: String(t.samples_with_verified_link) },
+          ...(t.model_usage ? modelUsageRows(t.model_usage) : []),
+          ...(t.thresholds ? [{ label: 'Alert thresholds in effect', value: thresholdText(t.thresholds) }] : []),
         ]}
       />
       <p className="telemetry-limits-title"><strong>Limits</strong></p>

@@ -21,7 +21,7 @@ api/agents.py (thin) -> services/agent_workflows.py (authorize, create agent_run
 | 7.1 Project Analysis | Analysis graph |
 | 7.2 Test Planning | Planning graph |
 | 7.3 QA Execution Coordinator, 7.4 Security Testing Coordinator | Deterministic services (Stages 7-10); no agent |
-| 7.5 AI/LLM Security | Planning (propose `llm_*` catalog checks) + Investigation (interpret output); scenario generation is Stage 13 |
+| 7.5 AI/LLM Security | Planning (propose `llm_*` catalog checks) + Investigation (interpret output); scenario generation is part of the validation phase (Q144) |
 | 7.6 Observability/Anomaly | Stage 12 (ADR-0011): detection and thresholds are deterministic code; the model is used only through the existing Investigation and Regression graphs on a user-triggered alert subject (`alert_id`), never to decide whether or how severely to alert |
 | 7.7 Failure Investigation | Investigation graph |
 | 7.8 Regression Test Proposal | Regression-proposal graph |

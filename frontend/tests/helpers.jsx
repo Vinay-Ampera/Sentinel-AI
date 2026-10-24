@@ -40,6 +40,7 @@ export function fakeApi(over = {}) {
     listRunEvents: empty,
     listRunResults: empty,
     listBreakGlass: empty,
+    getAlertThresholdLimits: empty,
     listUsers: empty,
     getEffectivePolicy: () => Promise.resolve({ approval_required_risk_levels: ['high'], allowed_risk_levels: ['low', 'medium', 'high'], high_risk_approver_roles: ['admin'], production_testing: { allowed: false }, risk_approvers: {}, risk_definitions: { low: 'Safe reads' } }),
     getProjectPolicies: () => Promise.resolve({ items: {}, effective: {} }),

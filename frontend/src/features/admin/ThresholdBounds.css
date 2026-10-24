@@ -1,0 +1,5 @@
+/* ThresholdBounds.jsx styles. */
+.threshold-table input { width: 7rem; }
+.threshold-name { display: block; font-weight: 600; text-transform: capitalize; }
+.threshold-help { display: block; font-weight: 400; }
+.threshold-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
