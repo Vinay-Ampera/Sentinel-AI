@@ -43,6 +43,7 @@ export default function ProjectLayoutPage() {
                 { to: `${base}/plans`, label: 'Plans' },
                 { to: `${base}/runs`, label: 'Runs' },
                 { to: `${base}/findings`, label: 'Findings' },
+                { to: `${base}/alerts`, label: 'Alerts' },
                 { to: `${base}/assistant`, label: 'Assistant' },
                 { to: `${base}/proposals`, label: 'Proposals' },
                 { to: `${base}/governance`, label: 'Governance' },

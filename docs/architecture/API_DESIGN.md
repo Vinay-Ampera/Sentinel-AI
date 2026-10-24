@@ -130,7 +130,19 @@ All errors:
 | `GET /artifacts/{id}/content` | Authorized download (attachment, nosniff, audited) | read |
 
 ### Operations
-`GET /health/live`, `GET /health/ready` (dependency status, no secrets). Reports (`/reports`), alerts (`/alerts`), and chat (`/chat`) are **reserved but not specified** — designed in Stages 12/14.
+`GET /health/live`, `GET /health/ready` (dependency status, no secrets). Reports (`/reports`) and chat (`/chat`) are **reserved but not specified** (Stage 14). Observability and alerts are built in Stage 12 (ADR-0011): see "Observability and alerts" below.
 
 ## Security requirements for the API
 No endpoint accepts or returns secrets; passwords/tokens never logged; responses omit `password_hash`, token hashes, internal paths; CORS allow-list from config (frontend origin only, credentials allowed); security headers on all responses; mass assignment prevented by explicit request models; file uploads never executed in the API process; audit event for login success/failure, permission denial, approvals, role changes, artifact download, run start/cancel, policy changes.
+
+## Observability and alerts (Stage 12, implemented; ADR-0011)
+| Endpoint | Purpose | Access |
+|---|---|---|
+| `POST /ingest/events` `{"events": [...]}` -> `202 {accepted, dropped{reason: n}}` | An application pushes structured events with `Authorization: Bearer <ingest key>`. At most 100 events and 256 KiB per request; strict event schema (see ADR-0011 section 3); `debug`/`info` are dropped and counted. Per-key limits 60 requests and 600 events per minute (`429` + `Retry-After`), per-project 50,000 accepted events per day; failed keys are throttled per source address. Unknown, expired, revoked and archived-project keys return the same `401`; `403 ingest_disabled` only for a valid key on a project that has not turned ingestion on. Cookies and CSRF play no part; the key opens no other route | ingest key (one project, write-only) |
+| `POST /projects/{id}/ingest-keys` `{label, expires_in_days?}` -> `201` with the key **once**; `GET` lists (no secret); `DELETE /projects/{id}/ingest-keys/{key_row_id}` revokes | Manage ingest keys (default 90 days, maximum 365, at most 5 active per project); audited | manage |
+| `PUT /projects/{id}/policies/observability_ingest` `{"value": {"enabled": true}}`, `.../alert_thresholds` | Turn ingestion on (off by default) and tune thresholds within fixed bounds (existing policy route) | manage |
+| `GET /projects/{id}/telemetry-status` | What was and was not received, drops by reason, rule errors, fixed limits text. Runs the time-driven rules lazily | read |
+| `GET /projects/{id}/event-groups[/{gid}]` | De-duplicated error groups; the detail has up to 20 redacted samples (labelled "reported by the application") | read |
+| `GET /projects/{id}/alerts?status=&severity=&rule=&limit=&offset=`, `GET .../alerts/{aid}` | List/read alerts (measured facts, evidence ids, history, telemetry block, no cause claim) | read |
+| `POST .../alerts/{aid}/acknowledge`, `.../resolve` `{note?}` | Record that a person saw / closed an alert (conditional transition, `409` if already so); audited; changes nothing else | run |
+| `POST /projects/{id}/agent-runs` with `alert_id` (workflow `investigation` or `regression`) | The failure-to-test loop: user-triggered, existing budgets, text-only proposals linked to the alert | run |

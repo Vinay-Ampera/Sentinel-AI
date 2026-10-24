@@ -121,7 +121,6 @@ def upgrade() -> None:
         "FOR EACH ROW EXECUTE FUNCTION public.forbid_mutation()"
     )
 
-
     op.execute(
         """
         ALTER TABLE public.regression_tests

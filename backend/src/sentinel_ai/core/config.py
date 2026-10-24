@@ -174,6 +174,22 @@ class Settings(DatabaseSettings):
     llm_max_prompt_chars: int = 60_000
     llm_max_output_tokens: int = 2048
 
+    # --- Observability ingestion and alerts (Stage 12, ADR-0011) ---
+    ingest_max_body_kib: int = 256
+    ingest_max_events_per_request: int = 100
+    ingest_requests_per_minute: int = 60  # per ingest key
+    ingest_events_per_minute: int = 600  # per ingest key
+    ingest_failed_auth_per_minute: int = 30  # per source address
+    event_daily_quota: int = 50_000  # accepted events per project and day
+    event_max_groups_per_project: int = 5_000
+    event_samples_per_group: int = 20
+    event_sample_retention_days: int = 30
+    event_group_retention_days: int = 180
+    alert_open_cap: int = 200
+    ingest_key_default_days: int = 90
+    ingest_key_max_days: int = 365
+    ingest_keys_per_project: int = 5
+
     @field_validator("cors_allowed_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: Any) -> Any:
@@ -248,6 +264,24 @@ class Settings(DatabaseSettings):
             raise ValueError("LLM_MAX_RETRIES must be 0-5 and LLM_INVALID_OUTPUT_RETRIES 0-2")
         if self.llm_call_timeout_seconds > self.llm_graph_deadline_seconds:
             raise ValueError("LLM_CALL_TIMEOUT_SECONDS must be <= LLM_GRAPH_DEADLINE_SECONDS")
+        return self
+
+    @model_validator(mode="after")
+    def _event_limits(self) -> "Settings":
+        positive = (
+            "ingest_max_body_kib", "ingest_max_events_per_request", "ingest_requests_per_minute",
+            "ingest_events_per_minute", "ingest_failed_auth_per_minute", "event_daily_quota",
+            "event_max_groups_per_project", "event_samples_per_group",
+            "event_sample_retention_days", "event_group_retention_days", "alert_open_cap",
+            "ingest_key_default_days", "ingest_key_max_days", "ingest_keys_per_project",
+        )  # fmt: skip
+        for name in positive:
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name.upper()} must be > 0")
+        if self.ingest_key_default_days > self.ingest_key_max_days:
+            raise ValueError("INGEST_KEY_DEFAULT_DAYS must be <= INGEST_KEY_MAX_DAYS")
+        if self.event_samples_per_group < 6:
+            raise ValueError("EVENT_SAMPLES_PER_GROUP must be at least 6")
         return self
 
     @model_validator(mode="after")

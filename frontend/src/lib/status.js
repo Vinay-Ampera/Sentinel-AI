@@ -120,6 +120,13 @@ const PROPOSAL = {
   verified: ['info', 'check'],
 }
 
+// An acknowledged alert is seen, not fixed; only a person resolving it closes it.
+const ALERT = {
+  open: ['warning', 'alert'],
+  acknowledged: ['info', 'dot'],
+  resolved: ['neutral', 'check'],
+}
+
 const titleCase = (s) => String(s).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
 function lookup(table, labelOf, noteOf = () => '') {
@@ -147,6 +154,7 @@ const DOMAINS = {
   project: lookup(PROJECT, titleCase),
   agent: lookup(AGENT, (v) => AGENT_LABEL[v] || titleCase(v)),
   proposal: lookup(PROPOSAL, titleCase),
+  alert: lookup(ALERT, titleCase),
   analysis: lookup(ANALYSIS, (v) => (v === 'completed' ? 'Completed' : titleCase(v))),
 }
 
@@ -159,4 +167,4 @@ export function statusMeta(domain, value) {
 }
 
 // Exposed so tests can assert that every known value has a deliberate tone and icon.
-export const STATUS_TABLES = { result: RESULT, run: RUN, severity: SEVERITY_TONE, verification: VERIFY, finding: FINDING, plan: PLAN, test: TEST, approval: APPROVAL, risk: RISK, project: PROJECT, analysis: ANALYSIS, agent: AGENT, proposal: PROPOSAL }
+export const STATUS_TABLES = { result: RESULT, run: RUN, severity: SEVERITY_TONE, verification: VERIFY, finding: FINDING, plan: PLAN, test: TEST, approval: APPROVAL, risk: RISK, project: PROJECT, analysis: ANALYSIS, agent: AGENT, proposal: PROPOSAL, alert: ALERT }

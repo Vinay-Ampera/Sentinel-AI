@@ -748,8 +748,10 @@ This section lists only each stage's status, next action, requirements and accep
 - Usage/cost metadata is recorded where provider data allows.
 
 ### Stage 12 — Observability, alerts, and failure-to-test loop
-**Status:** Pending  
-**Next action:** Starts after Stage 11.
+**Status:** Completed (all eight steps built and tested with the fake provider and a disposable database; thresholds, fingerprint grouping and draft eligibility are unmeasured on real telemetry: Q128, Q130, Q133; the new screens were not opened in a real browser: Q140)  
+**Next action:** Owner review and commit (nothing is committed). Q123 and Q142 are approved (ADR-0002 amended). Review migrations 0003-0010 using DATABASE_SCHEMA "Pre-apply review" and apply them yourself (never automatic; Q141). Paste the new settings from PROJECT_TRACKER into `backend/.env.example` (Claude cannot edit it). Operators must schedule `cli purge-events` and `cli evaluate-alerts` themselves (Q125, Q70). Stage 13 not started. Evidence: PROJECT_TRACKER section 7 (Stage 12 entries), ADR-0011 (with the implementation amendments), SECURITY_AND_SAFETY "Observability and alerts".
+
+**Steps** (all done 2026-10-24): 1 design + ADR-0011 · 2 event model and ingestion (migration 0010, ingest keys, redaction, caps) · 3 deterministic detection and thresholds · 4 correlation and internal failure sources · 5 alert API, acknowledgement, audit · 6 failure-to-test loop (alert subject for the investigation and regression graphs) · 7 frontend Alerts tab · 8 final checks and security review.
 
 **Work**
 - Define supported log/trace ingestion and instrumentation paths.
@@ -838,7 +840,7 @@ This section lists only each stage's status, next action, requirements and accep
 
 ## 16b. Frontend Track (separate from the stage list)
 
-Owner decision 2026-10-23: the full frontend is built in its own phases F0-F9, tracked apart from Stages 0-16. **Stage 11 stays paused**; no frontend phase may start Stage 11 features. UI rules: [`architecture/ui-ux-design.md`](architecture/ui-ux-design.md) (top navbar only, no sidebar; Light/Dark/System themes; system font stack; WCAG 2.2 AA practices). Decisions: [ADR-0009](decisions/ADR-0009-frontend-foundation.md). Evidence per phase: PROJECT_TRACKER section 7. Each phase starts only after the owner approves the previous one.
+Owner decision 2026-10-23: the full frontend is built in its own phases F0-F9, tracked apart from Stages 0-16. Stage 11 was paused during F0-F9; it has since been built, and its screens (the Assistant and Proposals project tabs and the finding actions) were added afterwards on the owner's request (PROJECT_TRACKER section 7, 2026-10-24). UI rules: [`architecture/ui-ux-design.md`](architecture/ui-ux-design.md) (top navbar only, no sidebar; Light/Dark/System themes; system font stack; WCAG 2.2 AA practices). Decisions: [ADR-0009](decisions/ADR-0009-frontend-foundation.md). Evidence per phase: PROJECT_TRACKER section 7. Each phase starts only after the owner approves the previous one.
 
 | Phase | Scope | Status | Next action |
 |---|---|---|---|

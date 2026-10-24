@@ -26,6 +26,7 @@ class CreateAgentRunRequest(BaseModel):
     snapshot_id: uuid.UUID | None = None
     result_id: uuid.UUID | None = None
     finding_id: uuid.UUID | None = None
+    alert_id: uuid.UUID | None = None
     run_id: uuid.UUID | None = None
     mode: Literal["prepare", "conclude"] | None = None
     summarize: bool = False
@@ -33,7 +34,10 @@ class CreateAgentRunRequest(BaseModel):
     @model_validator(mode="after")
     def _combination(self) -> "CreateAgentRunRequest":
         given = {
-            k for k in ("prompt", "snapshot_id", "result_id", "finding_id", "run_id", "mode")
+            k
+            for k in (
+                "prompt", "snapshot_id", "result_id", "finding_id", "alert_id", "run_id", "mode",
+            )  # fmt: skip
             if getattr(self, k) is not None
         } | ({"summarize"} if self.summarize else set())  # fmt: skip
         allowed, required = _RULES[self.workflow]
@@ -43,10 +47,10 @@ class CreateAgentRunRequest(BaseModel):
         missing = required - given
         if missing:
             raise ValueError(f"{', '.join(sorted(missing))} required for {self.workflow}")
-        if self.workflow in ("investigation", "regression") and (self.result_id is None) == (
-            self.finding_id is None
+        if self.workflow in ("investigation", "regression") and (
+            sum(x is not None for x in (self.result_id, self.finding_id, self.alert_id)) != 1
         ):
-            raise ValueError("give exactly one of result_id or finding_id")
+            raise ValueError("give exactly one of result_id, finding_id or alert_id")
         if self.workflow == "verification":
             if self.mode == "conclude" and self.run_id is None:
                 raise ValueError("run_id is required to conclude verification")
@@ -58,8 +62,8 @@ class CreateAgentRunRequest(BaseModel):
 _RULES: dict[str, tuple[set[str], set[str]]] = {
     "planning": ({"prompt", "snapshot_id"}, {"prompt"}),
     "analysis": ({"snapshot_id"}, {"snapshot_id"}),
-    "investigation": ({"result_id", "finding_id"}, set()),
-    "regression": ({"result_id", "finding_id"}, set()),
+    "investigation": ({"result_id", "finding_id", "alert_id"}, set()),
+    "regression": ({"result_id", "finding_id", "alert_id"}, set()),
     "verification": ({"finding_id", "mode", "run_id", "summarize"}, {"finding_id", "mode"}),
 }
 
@@ -121,6 +125,8 @@ class RegressionProposalOut(BaseModel):
     project_id: uuid.UUID
     finding_id: uuid.UUID | None
     result_id: uuid.UUID | None
+    alert_id: uuid.UUID | None
+    event_group_id: uuid.UUID | None
     agent_run_id: uuid.UUID | None
     status: str
     title: str
@@ -141,6 +147,7 @@ class RegressionProposalOut(BaseModel):
     def from_record(cls, p: ProposalRecord) -> "RegressionProposalOut":
         return cls(
             id=p.id, project_id=p.project_id, finding_id=p.finding_id, result_id=p.result_id,
+            alert_id=p.alert_id, event_group_id=p.event_group_id,
             agent_run_id=p.agent_run_id, status=p.status, title=p.title, rationale=p.rationale,
             target_path=p.target_path, framework=p.framework, code=p.code,
             expected_behavior=p.expected_behavior, evidence_ids=p.evidence_ids,

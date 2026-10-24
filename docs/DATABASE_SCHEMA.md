@@ -27,7 +27,9 @@ No user is seeded (no credentials in migrations). The first Super Admin is creat
 **Artifacts:** `artifacts` (metadata + `storage_backend`/`storage_key`, `sha256`, `size_bytes`, `content_type`, validation/redaction status, `retention_until`, soft delete).
 **Governance:** `policies` (global/project key→JSON; seeded safe defaults), `llm_usage` (tokens/cost per call, `blocked_by_budget`; 0009 adds `outcome`, `attempts`, `latency_ms`, `prompt_hash`, `template_version`, `agent_run_id`), `agent_runs` and append-only `agent_steps` (0009; workflow trace, no prompts), `regression_tests` (extended in 0009 to hold drafted tests: project scope, optional result subject, draft text, risk flags, frozen by trigger), `audit_events` (append-only).
 
-**Deferred to later stages (no table yet, by design):** alerts/anomalies/trace references (Stage 12), chat history (Stage 14), report records (Stage 14), accessibility/LLM-security result detail beyond `test_results` + artifacts (Stages 9–13). Adding them requires a new migration and a doc update; no feature may assume them now.
+**Deferred to later stages (no table yet, by design):** trace resolution, metrics and a raw log store (never planned for Stage 12: trace ids are stored only as opaque references), chat history (Stage 14), report records (Stage 14), accessibility/LLM-security result detail beyond `test_results` + artifacts (Stages 9–13). Adding them requires a new migration and a doc update; no feature may assume them now.
+
+**Observability (migration `0010_observability_alerts`, Stage 12, ADR-0011; written and tested on a disposable database, not applied to the real one):** `ingest_keys` (project-scoped write-only credentials; only a 32-byte keyed hash is stored, `key_id` is a public 12-hex id, expiry and revocation); `event_groups` (one row per project and versioned fingerprint: service, environment, level class, error type, normalized message, first/last seen, total count, `has_stack`, `is_overflow`); `event_buckets` (hourly UTC counts per group); `events` (at most 20 redacted samples per group, ordered by an identity column; correlation claims, their verification and redaction counts; never a raw payload); `ingest_stats` (per project and day: accepted, dropped by reason, rule evaluation errors); `alerts` (one open alert per project, rule and subject by a partial unique index; severity, status `open|acknowledged|resolved`, measured and evidence JSON of facts and ids only, `cause_status`); `alert_history` (append-only). `regression_tests` gains `alert_id` and `event_group_id` (plain restrictive foreign keys, frozen with the draft; retention never deletes an alert or group a proposal points to). Every table carries `project_id`.
 
 ## Rules enforced by the database
 | Rule | Mechanism |
@@ -43,6 +45,9 @@ No user is seeded (no credentials in migrations). The first Super Admin is creat
 | Audit, job and finding event logs are append-only | `forbid_mutation` triggers (UPDATE/DELETE blocked on `audit_events`; UPDATE blocked on the other two — cascade deletes with the parent are allowed) |
 | Artifact storage keys cannot be absolute or contain `..`/backslashes; `sha256` is 64 hex chars | CHECKs |
 | Idempotent run creation | unique `(project_id, idempotency_key)` where not null |
+| One open alert per (project, rule, subject); a resolved alert has `closed_at` | partial unique index `alerts_one_open`, `alerts_closed_consistent` CHECK |
+| Ingest key shape and lifetime; trace/span id formats; event field sizes | CHECKs on `ingest_keys`, `events`, `event_groups` |
+| Alert history is append-only | `forbid_mutation` trigger |
 
 ## Ownership and access scope (authoritative statement)
 A user may access a project iff **any** of: (1) `projects.owner_user_id = user`; (2) a `project_memberships` row; (3) the user is in `projects.team_id` and `team_access` ≥ requested level; (4) the user is **Admin/Super Admin** acting on a project in their administrative scope (Admin: projects they own, teams they own, or explicitly delegated; Super Admin: all, every access audited). Access levels: `read` < `run` < `manage`. Child records (sources, plans, runs, batches, results, findings, artifacts, audit rows) are authorized **only through `project_id`** — a run/finding/artifact ID alone is never proof of access. Every repository-layer query for a child entity joins to `projects` and applies the access predicate. Cross-project access tests are mandatory (TEST_STRATEGY).
@@ -91,3 +96,36 @@ Additive columns on the existing `findings` family (see the Findings paragraph a
 
 ## Migration 0008 - normalized attributes and duplicate groups (Stage 10)
 `findings` gains `cwe` (1..99999, nullable), `component` (<=400; `pypi:name@1.2` or `GET https://host/path`), `aliases` (`text[]`, <=20, default empty; advisory/CVE ids) and `group_id` (FK `finding_groups`, `ON DELETE SET NULL`); indexes `(project_id, group_id)` and a partial `(project_id, cwe)`. New table `finding_groups` (`project_id`, `group_key` unique per project, `kind` in `location`|`advisory`, timestamps). Groups are derived data recomputed after each scan (`services/dedup.py`); they never merge, hide or re-status findings. Existing rows stay valid (nullable/defaulted). Downgrade drops the columns and the table; findings are kept. Tested up and down on a disposable database; **not applied to the real database**.
+
+## Pre-apply review of migrations 0003-0010 (2026-10-24; not applied; review before `alembic upgrade head`)
+Reviewed by reading each migration and the rendered SQL (`alembic upgrade 0002_public_application_schema:0010_observability_alerts --sql`, 581 lines, no connection needed), and by the disposable-database tests (up, down and up again: `test_migrations.py`, 18 tests, plus the full suite). **Nothing was applied to the real database.** The real database was not inspected, so the preconditions below are *unverified there*.
+
+**What they do to existing data**
+- 0003 plan integrity: adds nullable columns and three CHECKs to `test_plans` / `approvals` (they validate existing rows), triggers on plans, planned tests, approvals and runs. No row is rewritten.
+- 0004, 0005, 0008: new tables and nullable/defaulted columns, indexes. No row is rewritten.
+- 0006: swaps the `test_results.status` CHECK for a wider one (adds `not_run`) and adds `test_case_results`.
+- 0007: adds defaulted columns to `findings` / `verification_attempts`, widens the `finding_events` CHECK.
+- 0009: new tables, defaulted columns on `llm_usage`; on `regression_tests` it adds columns, **backfills `project_id` and placeholder text from `findings` for existing rows** (the only data-writing statement in the range), then makes those columns NOT NULL and relaxes `finding_id`.
+- 0010: new tables only, plus `regression_tests` gets two nullable columns, a widened subject CHECK and a replaced guard function. No row is rewritten.
+
+**What could stop an upgrade** (each migration runs in one transaction, so a failure aborts cleanly and leaves the database at the previous revision). Read-only pre-flight checks to run first:
+```sql
+-- expect revision 0002_public_application_schema
+SELECT version_num FROM public.alembic_version;
+-- 0003: existing rows that violate the new CHECKs (both expect 0)
+SELECT count(*) FROM public.test_plans WHERE status NOT IN ('draft','rejected','superseded');
+SELECT count(*) FROM public.approvals WHERE risk_level IN ('high','critical') AND decision = 'approved' AND decided_by = requested_by;
+-- 0009: existing proposals (their project is taken from the finding); expect every row to have one
+SELECT count(*) FROM public.regression_tests;
+SELECT count(*) FROM public.regression_tests rt LEFT JOIN public.findings f ON f.id = rt.finding_id WHERE f.id IS NULL;
+-- general: server version (gen_random_uuid needs 13+) and who owns the tables (run alembic as that role)
+SHOW server_version;
+SELECT tableowner FROM pg_tables WHERE schemaname = 'public' AND tablename = 'projects';
+-- size of what the ALTERs will lock briefly
+SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE relname IN ('test_plans','approvals','test_results','findings','finding_events','regression_tests','llm_usage','test_batches') ORDER BY 1;
+```
+**Locks:** the `ALTER TABLE` statements take a short exclusive lock on `test_plans`, `approvals`, `test_results`, `findings`, `verification_attempts`, `finding_events`, `llm_usage`, `test_batches`, `regression_tests`, `target_authorizations`; on a small database this is milliseconds, but apply while no worker or API request is running (stop the API and Celery worker first).
+
+**Downgrade is not harmless** (`alembic downgrade` removes data): 0010 drops the observability tables and deletes proposals drafted from alerts; 0009 drops `agent_runs`/`agent_steps`, the draft columns and deletes proposals drafted from a result; 0008 drops `finding_groups`; 0007 deletes `reopened`/`verification_attempt` finding events and drops finding columns; 0006 drops `test_case_results` and maps `not_run` to `skipped`; 0005/0004 drop their tables. Take a `pg_dump` first and prefer fixing forward.
+
+**Suggested procedure (owner runs it):** `pg_dump` the real database; stop the API and worker; run the pre-flight queries above; `poetry run alembic upgrade 0002_public_application_schema:0010_observability_alerts --sql > review.sql` and read it; `poetry run alembic current`; `poetry run alembic upgrade head`; `poetry run alembic current` (expect `0010_observability_alerts`); start the app and check `GET /api/v1/health/ready`. Then, if wanted, enable `observability_ingest` on one test project only.

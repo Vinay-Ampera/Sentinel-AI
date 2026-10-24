@@ -22,9 +22,19 @@ from typing import Any
 ALLOWED_KINDS: Mapping[str, frozenset[str]] = {
     "analysis": frozenset({"analysis_fact", "manifest_fact", "source_excerpt"}),
     "planning": frozenset({"analysis_fact", "catalog_check", "user_request"}),
-    "investigation": frozenset({"log", "test_case", "finding", "analysis_fact", "source_excerpt"}),
+    "investigation": frozenset(
+        {"log", "test_case", "finding", "analysis_fact", "source_excerpt", "event_sample"}
+    ),
     "regression": frozenset(
-        {"log", "test_case", "finding", "analysis_fact", "source_excerpt", "existing_test"}
+        {
+            "log",
+            "test_case",
+            "finding",
+            "analysis_fact",
+            "source_excerpt",
+            "existing_test",
+            "event_sample",
+        }
     ),  # fmt: skip
     "verification": frozenset({"finding", "scan_summary", "test_case", "log"}),
 }

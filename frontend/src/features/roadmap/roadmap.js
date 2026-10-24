@@ -2,12 +2,6 @@
 // available; the page that shows it has no controls. Keep it in step with the plan.
 export const ROADMAP = [
   {
-    stage: 12,
-    title: 'Observability and alerts',
-    text: 'Bring in logs and traces, correlate them with runs and findings, and turn real failures into proposed tests.',
-    items: ['Noise filtering and thresholds you can configure', 'Alerts you can acknowledge', 'Links between an alert, a run and a finding'],
-  },
-  {
     stage: 13,
     title: 'Accessibility and LLM security testing',
     text: 'Accessibility checks of the applications you analyze, and tests for prompt injection and agent risks.',

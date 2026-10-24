@@ -11,7 +11,7 @@ Blueprint requires Developer/Admin/Super Admin roles with server-enforced author
 - Passwords hashed with Argon2id; the encoded hash is stored in `password_hash`.
 - Server-side sessions in `app_user.sessions`; opaque random token in an HttpOnly cookie; only an HMAC-SHA-256 (keyed with `SESSION_TOKEN_PEPPER`) of the token is stored. Idle and absolute expiry; revocation supported.
 - CSRF token per session, sent as `X-CSRF-Token` on state-changing requests.
-- No bearer/API tokens and no SSO in the first release.
+- No bearer/API tokens and no SSO in the first release, **except the project ingest key** (amendment 2026-10-24 below).
 
 ## Consequences
 - Immediate revocation and auditing; no JWT revocation problem. Requires a DB lookup per request (acceptable; indexed).
@@ -28,3 +28,12 @@ Stateless JWT access tokens (harder revocation), OAuth/SSO only (not requested),
 - Login failures (unknown, inactive, locked, wrong password) return one identical 401; the reason is audit-only. A dummy Argon2 verify equalises timing for unknown accounts.
 - The client IP is the direct peer address; `X-Forwarded-For` is not trusted until a trusted-proxy setting exists.
 - The per-IP rate limiter is in-process (per worker); the database lockout is the authoritative brute-force control.
+
+## Amendment (2026-10-24, Stage 12): project ingest keys are the one exception to "no bearer tokens"
+Approved by the owner (Q123). A push model for application events has no browser and no session, so it needs one machine credential. The exception is deliberately narrow and does not weaken the session design:
+- **What it is:** a project-scoped *ingest key* `sai_ing_<12-hex key id>_<32 random bytes, urlsafe>`, sent as `Authorization: Bearer <key>` to `POST /api/v1/ingest/events` only. It is not a user, has no role, and every other route rejects it (they accept only the session cookie).
+- **Storage:** like a session token, only a keyed hash is stored (HMAC-SHA-256 with `SESSION_TOKEN_PEPPER`, purpose `ingest-key`); the secret is shown once at creation; comparison is constant time; unknown, malformed, expired, revoked and archived-project keys return one identical `401`.
+- **Scope and lifetime:** one project, one capability (add events); created, listed and revoked only by project managers; default 90 days (maximum 365), at most 5 active per project, revocation effective on the next request; creation and revocation are audited and the key never appears in an audit row, log or list.
+- **CSRF and cookies:** the route ignores cookies and applies no CSRF check (there is no ambient credential to forge); CORS does not allow the `Authorization` header from browsers, so it is a server-to-server path.
+- **Abuse limits:** per-key request and event rate limits, a per-project daily quota, per-address throttling of failed keys (in process; Q136), and payload and schema bounds. A stolen key can only add (redacted, capped) events to its own project; it cannot read, change a finding, run or approval, or start a model call.
+- Everything else in this ADR is unchanged: no API tokens for people, no SSO, no other bearer credential. Details and tests: ADR-0011 and `tests/integration/test_observability.py`.

@@ -67,12 +67,14 @@ def create_agent_run(
         )
     elif wf == "investigation":
         detail = service.run_investigation(
-            db, ctx, user, project_id, result_id=body.result_id, finding_id=body.finding_id, rt=rt
-        )
+            db, ctx, user, project_id, result_id=body.result_id, finding_id=body.finding_id,
+            alert_id=body.alert_id, rt=rt,
+        )  # fmt: skip
     elif wf == "regression":
         detail = service.run_regression(
-            db, ctx, user, project_id, result_id=body.result_id, finding_id=body.finding_id, rt=rt
-        )
+            db, ctx, user, project_id, result_id=body.result_id, finding_id=body.finding_id,
+            alert_id=body.alert_id, rt=rt,
+        )  # fmt: skip
     else:
         assert body.finding_id is not None and body.mode is not None
         detail = service.run_verification(

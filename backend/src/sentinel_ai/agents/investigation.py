@@ -23,7 +23,9 @@ LIMITATIONS = (
 
 # status/class -> (class, explanation, ask the model?)
 _NOT_RUN = {"failed_to_start", "timed_out", "cancelled", "blocked", "skipped", "not_run"}
-MODEL_CLASSES = frozenset({"assertion_failure", "unclassified", "scanner_finding"})
+MODEL_CLASSES = frozenset(
+    {"assertion_failure", "unclassified", "scanner_finding", "reported_error"}
+)
 
 SYSTEM = (
     "You help a QA engineer understand why a test failed or why a scanner reported a finding. "
@@ -76,6 +78,22 @@ def classify(status: str | None, messages: list[str], *, is_finding: bool) -> tu
     if "timeout" in text or "timed out" in text:
         return "timeout", "A test reported a timeout."
     return "unclassified", "The failure does not match a known pattern."
+
+
+def classify_alert(has_group: bool) -> tuple[str, str]:
+    """Class for an alert subject that carries reported application events. Alerts about a
+    measurement only (silence, dropped events, a rate) are explained, never sent to a model."""
+    if has_group:
+        return (
+            "reported_error",
+            "The application reported this error; Sentinel did not observe it itself, and "
+            "reported events can be incomplete or wrong.",
+        )
+    return (
+        "no_failure_evidence",
+        "This alert reports a measurement (a count, a silence or dropped events). It carries no "
+        "error text to investigate; open the group or the run it points to instead.",
+    )
 
 
 def input_hash(subject: str, content_sha: str, model: str | None) -> str:

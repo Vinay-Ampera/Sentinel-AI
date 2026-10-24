@@ -16,7 +16,7 @@ Application types: web apps, REST APIs, AI apps (RAG/agents). Inputs: Git reposi
 8. **Gemini provider service** — one boundary for all LLM calls: timeouts, token/cost limits from `policies`, usage rows in `llm_usage`, redaction before send.
 9. **Tool-integration layer** — adapters behind a common interface (below).
 10. **Artifact store** — interface; local directory in development, production store TBD (Q10).
-11. **Telemetry** — OpenTelemetry-compatible correlation (Stage 12).
+11. **Telemetry** — OpenTelemetry-compatible correlation (Stage 13; Stage 12 ingests structured events and stores trace ids only as opaque references, ADR-0011).
 
 ## Trust zones
 | Zone | Contents | Trust |

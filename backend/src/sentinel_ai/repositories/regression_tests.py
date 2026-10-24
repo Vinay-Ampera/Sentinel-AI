@@ -13,7 +13,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 _COLS = (
-    "id, project_id, finding_id, result_id, agent_run_id, status, title, rationale, target_path, "
+    "id, project_id, finding_id, result_id, alert_id, event_group_id, agent_run_id, "
+    "status, title, rationale, target_path, "
     "framework, code, expected_behavior, evidence_ids, risk_flags, overlap, proposed_by, "
     "decided_by, decision_note, created_at, decided_at"
 )
@@ -25,6 +26,8 @@ class ProposalRecord:
     project_id: uuid.UUID
     finding_id: uuid.UUID | None
     result_id: uuid.UUID | None
+    alert_id: uuid.UUID | None
+    event_group_id: uuid.UUID | None
     agent_run_id: uuid.UUID | None
     status: str
     title: str
@@ -50,21 +53,26 @@ def insert(
     finding_id: uuid.UUID | None,
     result_id: uuid.UUID | None,
     agent_run_id: uuid.UUID,
+    alert_id: uuid.UUID | None = None,
+    event_group_id: uuid.UUID | None = None,
     proposed_by: uuid.UUID,
     draft: dict[str, Any],
 ) -> uuid.UUID:
     row = db.execute(
         text(
-            "INSERT INTO public.regression_tests (project_id, finding_id, result_id, "
-            "agent_run_id, proposed_by, title, rationale, target_path, framework, code, "
-            "expected_behavior, evidence_ids, risk_flags, overlap) VALUES (:p, :f, :r, :a, :u, "
-            ":t, :ra, :tp, :fw, :c, :eb, CAST(:ev AS jsonb), CAST(:rf AS jsonb), "
+            "INSERT INTO public.regression_tests (project_id, finding_id, result_id, alert_id, "
+            "event_group_id, agent_run_id, proposed_by, title, rationale, target_path, "
+            "framework, code, expected_behavior, evidence_ids, risk_flags, overlap) "
+            "VALUES (:p, :f, :r, :al, :eg, :a, :u, :t, :ra, :tp, :fw, :c, :eb, "
+            "CAST(:ev AS jsonb), CAST(:rf AS jsonb), "
             "CAST(:ov AS jsonb)) RETURNING id"
         ),
         {
             "p": project_id,
             "f": finding_id,
             "r": result_id,
+            "al": alert_id,
+            "eg": event_group_id,
             "a": agent_run_id,
             "u": proposed_by,
             "t": draft["title"],

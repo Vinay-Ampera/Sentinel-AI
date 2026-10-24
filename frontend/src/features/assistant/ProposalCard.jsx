@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Alert from '../../components/Alert.jsx'
 import Button from '../../components/Button.jsx'
 import Card from '../../components/Card.jsx'
@@ -44,6 +45,7 @@ export default function ProposalCard({ proposal, canDecide, api, projectId, onCh
           { label: 'Why', value: proposal.rationale },
           { label: 'Expected behaviour', value: proposal.expected_behavior },
           { label: 'Based on', value: proposal.evidence_ids.join(', ') || 'Not recorded' },
+          ...(proposal.alert_id ? [{ label: 'Drafted from', value: <Link to={`/projects/${projectId}/alerts/${proposal.alert_id}`}>the alert</Link> }] : []),
           ...(proposal.overlap.length > 0 ? [{ label: 'Same name as existing tests', value: proposal.overlap.join(', ') }] : []),
           { label: 'Drafted', value: formatDateTime(proposal.created_at) },
           ...(proposal.decided_at ? [{ label: 'Decision', value: `${proposal.status} on ${formatDateTime(proposal.decided_at)}${proposal.decision_note ? `: ${proposal.decision_note}` : ''}` }] : []),

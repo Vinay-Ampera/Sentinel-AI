@@ -13,6 +13,7 @@ from sentinel_ai.api import (
     findings,
     governance,
     health,
+    observability,
     plans,
     projects,
     runs,
@@ -27,6 +28,7 @@ from sentinel_ai.integrations.llm.factory import build_gateway
 from sentinel_ai.jobs.celery_app import CeleryEnqueuer
 from sentinel_ai.services import dispatcher
 from sentinel_ai.services.artifact_store import ArtifactStore
+from sentinel_ai.services.event_redaction import EventRedactor
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.plan_limiter = RateLimiter(plans.PLANS_PER_MINUTE)
     app.state.agent_limiter = RateLimiter(agents.AGENT_RUNS_PER_MINUTE)
     app.state.login_limiter = RateLimiter(settings.login_ip_max_attempts_per_minute)
+    app.state.ingest_limits = observability.IngestLimits(settings)
+    app.state.event_redactor = EventRedactor.from_settings(settings)
     app.include_router(health.router, prefix="/api/v1")
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
@@ -100,4 +104,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(runs.router, prefix="/api/v1")
     app.include_router(findings.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1")
+    app.include_router(observability.ingest_router, prefix="/api/v1")
+    app.include_router(observability.router, prefix="/api/v1")
     return app

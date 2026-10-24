@@ -157,6 +157,47 @@ function checkProposal(p) {
   return p
 }
 
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+function checkAlert(a) {
+  const ok =
+    a &&
+    typeof a.id === 'string' &&
+    typeof a.rule === 'string' &&
+    typeof a.title === 'string' &&
+    typeof a.severity === 'string' &&
+    typeof a.status === 'string' &&
+    typeof a.next_action === 'string' &&
+    isObject(a.measured) &&
+    isObject(a.evidence)
+  if (!ok) throw bad('alert')
+  return a
+}
+
+function checkAlertDetail(a) {
+  checkAlert(a)
+  if (!Array.isArray(a.history) || !Array.isArray(a.proposal_ids) || !isObject(a.telemetry)) throw bad('alert detail')
+  return a
+}
+
+function checkTelemetry(t) {
+  const ok = isObject(t) && typeof t.has_events === 'boolean' && typeof t.ingest_enabled === 'boolean' && Array.isArray(t.limits) && isObject(t.dropped_last_24h)
+  if (!ok) throw bad('telemetry status')
+  return t
+}
+
+function checkGroup(g) {
+  const ok = g && typeof g.id === 'string' && typeof g.message === 'string' && typeof g.total_count === 'number' && typeof g.level_class === 'string'
+  if (!ok) throw bad('event group')
+  return g
+}
+
+function checkIngestKey(k) {
+  const ok = k && typeof k.id === 'string' && typeof k.key_id === 'string' && typeof k.label === 'string' && typeof k.status === 'string'
+  if (!ok) throw bad('ingest key')
+  return k
+}
+
 // Evidence is untrusted text from a sandbox: fetched as text, never rendered as HTML, and
 // shortened for display (the full file stays downloadable).
 const EVIDENCE_LIMIT = 200_000
@@ -389,6 +430,47 @@ export const api = {
   },
   async listRegressionProposals(projectId) {
     return checkItems(await request('GET', `/projects/${projectId}/regression-proposals`), 'regression proposals').map(checkProposal)
+  },
+  async getTelemetryStatus(projectId) {
+    return checkTelemetry(await request('GET', `/projects/${projectId}/telemetry-status`))
+  },
+  async listAlerts(projectId, { status, severity, rule } = {}) {
+    const query = new URLSearchParams()
+    if (status) query.set('status', status)
+    if (severity) query.set('severity', severity)
+    if (rule) query.set('rule', rule)
+    const qs = query.toString()
+    return checkItems(await request('GET', `/projects/${projectId}/alerts${qs ? `?${qs}` : ''}`), 'alerts').map(checkAlert)
+  },
+  async getAlert(projectId, alertId) {
+    return checkAlertDetail(await request('GET', `/projects/${projectId}/alerts/${alertId}`))
+  },
+  async acknowledgeAlert(projectId, alertId, note) {
+    return checkAlert(await request('POST', `/projects/${projectId}/alerts/${alertId}/acknowledge`, { note: note || null }))
+  },
+  async resolveAlert(projectId, alertId, note) {
+    return checkAlert(await request('POST', `/projects/${projectId}/alerts/${alertId}/resolve`, { note: note || null }))
+  },
+  async listEventGroups(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/event-groups`), 'event groups').map(checkGroup)
+  },
+  async getEventGroup(projectId, groupId) {
+    const g = checkGroup(await request('GET', `/projects/${projectId}/event-groups/${groupId}`))
+    if (!Array.isArray(g.samples) || !Array.isArray(g.limits)) throw bad('event group')
+    return g
+  },
+  async listIngestKeys(projectId) {
+    return checkItems(await request('GET', `/projects/${projectId}/ingest-keys`), 'ingest keys').map(checkIngestKey)
+  },
+  async createIngestKey(projectId, label, expiresInDays) {
+    const body = { label }
+    if (expiresInDays) body.expires_in_days = expiresInDays
+    const k = checkIngestKey(await request('POST', `/projects/${projectId}/ingest-keys`, body))
+    if (typeof k.key !== 'string') throw bad('ingest key')
+    return k
+  },
+  async revokeIngestKey(projectId, keyId) {
+    return checkIngestKey(await request('DELETE', `/projects/${projectId}/ingest-keys/${keyId}`))
   },
   async decideRegressionProposal(projectId, proposalId, decision, note) {
     return checkProposal(await request('POST', `/projects/${projectId}/regression-proposals/${proposalId}/decision`, { decision, note: note || null }))

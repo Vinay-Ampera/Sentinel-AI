@@ -33,7 +33,7 @@ from sentinel_ai.repositories.findings import (
     FindingRecord,
 )
 from sentinel_ai.repositories.identity import UserRecord
-from sentinel_ai.services import audit, dedup
+from sentinel_ai.services import alerts, audit, dedup
 from sentinel_ai.services import project_access as project_access_service
 from sentinel_ai.services.audit import RequestContext
 
@@ -75,6 +75,24 @@ class FindingDetail:
 
 
 # ---- worker side ------------------------------------------------------------------------------
+
+
+def _raise_reopened_alert(
+    db: Session,
+    project_id: uuid.UUID,
+    finding: repo.FindingRecord,
+    run_id: uuid.UUID,
+    result_id: uuid.UUID,
+) -> None:
+    """Internal alert (ADR-0011), best effort in a savepoint: it must never fail the scan."""
+    try:
+        with db.begin_nested():
+            alerts.finding_reopened(
+                db, None, project_id, finding.id, title=finding.title, severity=finding.severity,
+                run_id=run_id, result_id=result_id,
+            )  # fmt: skip
+    except Exception as exc:
+        logger.warning("finding alert failed (%s)", type(exc).__name__)
 
 
 def ingest_scan(
@@ -121,6 +139,7 @@ def ingest_scan(
                     db, finding_id, "reopened", from_value=existing.status, to_value="reopened",
                     detail={"run_id": str(run_id), "reason": "reported again by a later scan"},
                 )  # fmt: skip
+                _raise_reopened_alert(db, project_id, existing, run_id, result_id)
             else:
                 seen += 1
                 repo.insert_event(db, finding_id, "seen_again", detail={"run_id": str(run_id)})

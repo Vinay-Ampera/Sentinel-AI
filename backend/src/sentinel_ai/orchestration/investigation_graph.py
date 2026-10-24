@@ -19,6 +19,7 @@ from sentinel_ai.integrations.llm import evidence_filter as ef
 from sentinel_ai.orchestration.common import WorkflowDeps, cached_output, call_model
 from sentinel_ai.repositories import agent_context
 from sentinel_ai.repositories import findings as findings_repo
+from sentinel_ai.repositories import observability as obs_repo
 from sentinel_ai.services import agent_evidence
 
 
@@ -33,13 +34,30 @@ class InvestigationState(TypedDict, total=False):
 
 
 def collect_subject(
-    deps: WorkflowDeps, result_id: uuid.UUID | None, finding_id: uuid.UUID | None
-) -> tuple[list[ef.Excerpt], list[str], str, bool, list[str]]:
-    """(excerpts, failure messages, status, is_finding, notes). Always project-scoped."""
+    deps: WorkflowDeps,
+    result_id: uuid.UUID | None,
+    finding_id: uuid.UUID | None,
+    alert_id: uuid.UUID | None = None,
+) -> tuple[list[ef.Excerpt], list[str], str, bool, list[str], bool]:
+    """(excerpts, failure messages, status, is_finding, notes, from_reported_events).
+    Always project-scoped. An alert contributes its reported events, or (when it points at
+    a result or a finding) the same evidence a person would open from there."""
     items: list[ef.Excerpt] = []
     messages: list[str] = []
     notes: list[str] = []
     status = "failed"
+    from_events = False
+    if alert_id is not None:
+        alert = obs_repo.get_alert(deps.db, deps.project_id, alert_id)
+        if alert is None:
+            raise DomainError(404, "not_found", "Alert not found")
+        if alert["group_id"] is not None:
+            more_items, msgs = agent_evidence.alert_excerpts(deps.db, deps.project_id, alert)
+            items += more_items
+            messages += msgs
+            from_events = True
+        result_id = alert["result_id"] if not from_events else result_id
+        finding_id = alert["finding_id"] if not from_events else finding_id
     scoped_result_id = result_id
     is_finding = finding_id is not None
     if finding_id is not None:
@@ -64,7 +82,7 @@ def collect_subject(
             messages += msgs
             notes += more_notes
             status = scoped.result.status
-    return items, messages, status, is_finding, notes
+    return items, messages, status, is_finding, notes, from_events
 
 
 def content_hash(items: list[ef.Excerpt], status: str) -> str:
@@ -74,16 +92,27 @@ def content_hash(items: list[ef.Excerpt], status: str) -> str:
 
 
 def build_investigation_graph(
-    deps: WorkflowDeps, result_id: uuid.UUID | None, finding_id: uuid.UUID | None
+    deps: WorkflowDeps,
+    result_id: uuid.UUID | None,
+    finding_id: uuid.UUID | None,
+    alert_id: uuid.UUID | None = None,
 ) -> Any:
     trace = deps.trace
 
     def load_subject(state: InvestigationState) -> InvestigationState:
-        items, messages, status, is_finding, notes = collect_subject(deps, result_id, finding_id)
+        items, messages, status, is_finding, notes, from_events = collect_subject(
+            deps, result_id, finding_id, alert_id
+        )
         deps.db.commit()  # evidence reads are audited; end the transaction before any model call
-        subject = f"finding:{finding_id}" if finding_id else f"result:{result_id}"
+        subject = (
+            f"alert:{alert_id}" if alert_id else f"finding:{finding_id}" if finding_id
+            else f"result:{result_id}"
+        )  # fmt: skip
         trace.step("load_subject", "deterministic", "ok", {"excerpts": len(items), "notes": notes})
-        cls, why = agent.classify(status, messages, is_finding=is_finding)
+        if alert_id is not None and (from_events or not (items or is_finding)):
+            cls, why = agent.classify_alert(from_events)
+        else:
+            cls, why = agent.classify(status, messages, is_finding=is_finding)
         trace.step("classify", "deterministic", cls, {"status": status})
         return {
             "items": items,

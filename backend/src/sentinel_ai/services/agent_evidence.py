@@ -47,6 +47,46 @@ def short(value: uuid.UUID) -> str:
     return value.hex[:8]
 
 
+def alert_excerpts(
+    db: Session, project_id: uuid.UUID, alert: dict[str, Any], limit_samples: int = 5
+) -> tuple[list[ef.Excerpt], list[str]]:
+    """(excerpts, messages) for an alert whose group has reported events: the alert's measured
+    facts, the group, and up to ``limit_samples`` redacted samples. Everything is already
+    redacted at ingestion and goes through the gateway redactor again."""
+    from datetime import UTC, datetime, timedelta
+
+    from sentinel_ai.repositories import observability as obs
+
+    head = {k: alert[k] for k in ("rule", "severity", "status", "occurrences") if k in alert}
+    lines = [f"{k}: {v}" for k, v in head.items()]
+    lines.append(f"measured: {alert.get('measured')}")
+    lines.append(f"first_seen: {alert['first_seen']}  last_seen: {alert['last_seen']}")
+    items = [
+        ef.Excerpt(f"alert:{short(alert['id'])}", "event_sample", "\n".join(lines), priority=9)
+    ]
+    messages: list[str] = []
+    group = obs.get_group(db, project_id, alert["group_id"]) if alert.get("group_id") else None
+    if group is not None:
+        g = [
+            f"service: {group['service']}", f"environment: {group['environment']}",
+            f"level: {group['level_class']}", f"error_type: {group['error_type'] or ''}",
+            f"message_pattern: {group['message_norm']}", f"total_events: {group['total_count']}",
+            f"has_stack: {group['has_stack']}",
+        ]  # fmt: skip
+        items.append(ef.Excerpt(f"group:{short(group['id'])}", "event_sample", "\n".join(g), 8))
+        messages += [group["error_type"] or "", group["message_norm"]]
+        since = datetime.now(UTC) - timedelta(days=30)
+        for s in obs.list_samples(db, project_id, group["id"], limit_samples, since):
+            attrs = ", ".join(f"{k}={v}" for k, v in (s["attributes"] or {}).items())
+            body = (
+                f"time: {s['received_at']}\nlevel: {s['level']}\nmessage: {s['message']}\n"
+                f"error_type: {s['error_type'] or ''}\nrelease: {s['release'] or ''}\n"
+                f"attributes: {attrs}\nstack:\n{(s['stack'] or '')[:LOG_ITEM_CHARS]}"
+            )
+            items.append(ef.Excerpt(f"event:{short(s['id'])}", "event_sample", body, priority=7))
+    return items, messages
+
+
 def finding_excerpt(f: FindingRecord) -> ef.Excerpt:
     record: dict[str, Any] = {
         k: getattr(f, k) for k in _FINDING_FIELDS if getattr(f, k) is not None

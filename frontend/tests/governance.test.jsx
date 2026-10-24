@@ -108,7 +108,7 @@ describe('roadmap', () => {
     renderApp(fakeApi({ me: () => Promise.reject(new Error('no')) }), '/roadmap')
     expect(await screen.findByText('Nothing on this list is available yet')).toBeTruthy()
     const items = screen.getAllByRole('listitem').filter((li) => li.className === 'roadmap-item')
-    expect(items.length).toBe(5)
+    expect(items.length).toBe(4)
     expect(items.every((li) => li.querySelector('button, a') === null)).toBe(true)
   })
 })

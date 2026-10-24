@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from sentinel_ai.core.errors import DomainError
 from sentinel_ai.core.permissions import AccessLevel, Permission, Role, has_permission
 from sentinel_ai.repositories import identity, policies, project_access
-from sentinel_ai.services import audit
+from sentinel_ai.services import audit, observability_policy
 from sentinel_ai.services.audit import RequestContext
 from sentinel_ai.services.check_catalog import RISK_ORDER
 
@@ -43,6 +43,8 @@ PROJECT_KEYS = (
     "approval_required_risk_levels",
     "allowed_risk_levels",
     "risk_approvers",
+    "observability_ingest",
+    "alert_thresholds",
 )
 MAX_APPROVERS_PER_LEVEL = 10
 PROD_MAX_WINDOW_HOURS = 24
@@ -238,6 +240,10 @@ def validate_value(key: str, value: Any, *, project_scope: bool) -> Any:
         return {"allowed": flag}
     if key == "risk_approvers":
         return _uuid_lists(value)
+    if key == "observability_ingest":
+        return observability_policy.validate_ingest(value)
+    if key == "alert_thresholds":
+        return observability_policy.validate_thresholds(value)
     allowed = HIGH_RISK_ROLE_CHOICES if key == "high_risk_approver_roles" else ALL_LEVELS
     items = _levels(value, allowed)
     if items is None or (key in ("allowed_risk_levels", "high_risk_approver_roles") and not items):

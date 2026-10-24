@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from sentinel_ai.repositories import runs
 from sentinel_ai.repositories.runs import TERMINAL, BatchRecord, RunRecord
-from sentinel_ai.services import audit
+from sentinel_ai.services import alerts, audit
 from sentinel_ai.services.audit import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,16 @@ def _allowed_final(status: str, target: str) -> bool:
     }.get(status, set())
 
 
+def _raise_run_alert(db: Session, run_id: uuid.UUID) -> None:
+    """Internal alert for a failed run (ADR-0011). Best effort in a savepoint: an alerting
+    problem must never fail or roll back the run's own transition."""
+    try:
+        with db.begin_nested():
+            alerts.evaluate_run(db, None, run_id)
+    except Exception as exc:
+        logger.warning("run alert evaluation failed (%s)", type(exc).__name__)
+
+
 def finalize_run(db: Session, run_id: uuid.UUID, *, worker_id: str | None = None) -> str | None:
     """If every batch is terminal, give the run its derived final status. Returns the new
     status, or None when nothing changed. Safe to call repeatedly and concurrently."""
@@ -201,4 +211,5 @@ def finalize_run(db: Session, run_id: uuid.UUID, *, worker_id: str | None = None
         target_id=str(run_id),
         detail={"status": target},
     )
+    _raise_run_alert(db, run_id)
     return target

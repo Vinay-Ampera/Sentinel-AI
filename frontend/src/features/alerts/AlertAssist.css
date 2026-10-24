@@ -1,0 +1,2 @@
+/* AlertAssist.jsx styles. */
+.alert-assist-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }

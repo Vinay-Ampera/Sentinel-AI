@@ -84,6 +84,32 @@ class RegressionDraft(BaseModel):
     evidence_ids: list[EvidenceId] = Field(min_length=1, max_length=6)
 
 
+MIN_ALERT_OCCURRENCES = 2
+SUPPORTED_FRAMEWORKS = frozenset(ALLOWED_SUFFIXES)
+
+
+def alert_missing_evidence(
+    group: dict[str, Any] | None, *, failed_result_case: bool, frameworks: list[str]
+) -> list[str]:
+    """What is missing before an alert can yield a regression draft (empty = eligible).
+    Deterministic; the reasons are shown to the person so missing context is explained."""
+    missing: list[str] = []
+    if group is None and not failed_result_case:
+        missing.append("The alert has no reported error events and no failed test result.")
+    if group is not None and not failed_result_case:
+        if not group.get("error_type"):
+            missing.append("The reported events carry no error type.")
+        if not group.get("has_stack"):
+            missing.append("No stack trace was reported with these events.")
+    if group is not None and int(group.get("total_count", 0)) < MIN_ALERT_OCCURRENCES:
+        missing.append(f"Fewer than {MIN_ALERT_OCCURRENCES} occurrences were reported.")
+    if not SUPPORTED_FRAMEWORKS & {f.lower() for f in frameworks}:
+        missing.append(
+            "No analysed source with a supported test framework (pytest, jest or vitest)."
+        )
+    return missing
+
+
 def input_hash(subject: str, content_sha: str, model: str | None) -> str:
     return hashlib.sha256(
         "\x1f".join((TEMPLATE_VERSION, model or "", subject, content_sha)).encode()

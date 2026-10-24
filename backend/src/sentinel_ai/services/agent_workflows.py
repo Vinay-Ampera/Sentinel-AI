@@ -34,7 +34,7 @@ from sentinel_ai.orchestration.trace import Trace
 from sentinel_ai.repositories import agent_runs
 from sentinel_ai.repositories.agent_runs import AgentRunRecord, AgentStepRecord
 from sentinel_ai.repositories.identity import UserRecord
-from sentinel_ai.services import audit
+from sentinel_ai.services import alerts, audit
 from sentinel_ai.services.audit import RequestContext
 
 STALE_AFTER_FACTOR = 2.0  # a run is "interrupted" after twice the workflow deadline
@@ -241,36 +241,59 @@ def run_analysis(
     )  # fmt: skip
 
 
+def _subject(
+    result_id: uuid.UUID | None, finding_id: uuid.UUID | None, alert_id: uuid.UUID | None
+) -> tuple[str, uuid.UUID]:
+    if alert_id is not None:
+        return "alert", alert_id
+    if finding_id is not None:
+        return "finding", finding_id
+    assert result_id is not None
+    return "result", result_id
+
+
 def run_investigation(
     db: Session, ctx: RequestContext, user: UserRecord, project_id: uuid.UUID,
     *, result_id: uuid.UUID | None, finding_id: uuid.UUID | None, rt: Runtime,
+    alert_id: uuid.UUID | None = None,
 ) -> AgentRunDetail:  # fmt: skip
-    subject = ("finding", finding_id) if finding_id else ("result", result_id)
-    assert subject[1] is not None
-    return _execute(
+    subject = _subject(result_id, finding_id, alert_id)
+    detail = _execute(
         db, ctx, user, project_id, rt, workflow="investigation",
         template_version=investigation_agent.TEMPLATE_VERSION, subject=(subject[0], subject[1]),
         build=lambda rid, tr: investigation_graph.build_investigation_graph(
-            _deps(db, ctx, user, project_id, rt, rid, tr), result_id, finding_id
+            _deps(db, ctx, user, project_id, rt, rid, tr), result_id, finding_id, alert_id
         ),
         make_result=_generic_result,
     )  # fmt: skip
+    if alert_id is not None:
+        alerts.link_investigation(
+            db, ctx, user, project_id, alert_id, detail.run.id, "alert.investigate"
+        )
+        db.commit()
+    return detail
 
 
 def run_regression(
     db: Session, ctx: RequestContext, user: UserRecord, project_id: uuid.UUID,
     *, result_id: uuid.UUID | None, finding_id: uuid.UUID | None, rt: Runtime,
+    alert_id: uuid.UUID | None = None,
 ) -> AgentRunDetail:  # fmt: skip
-    subject = ("finding", finding_id) if finding_id else ("result", result_id)
-    assert subject[1] is not None
-    return _execute(
+    subject = _subject(result_id, finding_id, alert_id)
+    detail = _execute(
         db, ctx, user, project_id, rt, workflow="regression",
         template_version=regression_agent.TEMPLATE_VERSION, subject=(subject[0], subject[1]),
         build=lambda rid, tr: regression_graph.build_regression_graph(
-            _deps(db, ctx, user, project_id, rt, rid, tr), result_id, finding_id
+            _deps(db, ctx, user, project_id, rt, rid, tr), result_id, finding_id, alert_id
         ),
         make_result=_generic_result,
     )  # fmt: skip
+    if alert_id is not None:
+        alerts.link_investigation(
+            db, ctx, user, project_id, alert_id, detail.run.id, "alert.regression_draft"
+        )
+        db.commit()
+    return detail
 
 
 def run_verification(

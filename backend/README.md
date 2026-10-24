@@ -27,6 +27,7 @@ Names, defaults, and placeholders are in `.env.example`; real values go only in 
 | `GEMINI_API_KEY` | LLM calls (Stage 11) | yes |
 | `REDIS_URL` | Readiness probe now; Celery (Stage 7) | yes if it has a password |
 | `GEMINI_MODEL`, `LLM_*` (limits, prices, timeouts, retries; see `docs/architecture/AGENT_WORKFLOWS.md`) | LLM gateway (Stage 11) | no (defaults apply; `GEMINI_MODEL` needed to enable) |
+| `INGEST_*`, `EVENT_*`, `ALERT_OPEN_CAP` (request and event limits, rate limits, quotas, retention days, ingest key lifetime; see `docs/decisions/ADR-0011-observability-alerts-and-failure-to-test-loop.md`) | Observability ingestion and alerts (Stage 12) | no (defaults apply) |
 | Others (`APP_ENV`, `SESSION_*`, `ARTIFACT_*`, `UPLOAD_*`, `ZIP_*`, `CORS_ALLOWED_ORIGINS`) | later stages | no |
 
 ## Configuration loading (Stage 3)

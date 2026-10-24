@@ -16,6 +16,8 @@ Backend: pytest, httpx/Starlette TestClient, Ruff, mypy (strict on `src/`). Fron
 - **Frontend:** component/utility; route/role UX; loading/error/empty/progress states; E2E and axe on key flows.
 - **End-to-end:** intake (each of the four source types) → plan (each of three modes) → policy/approval → run → result → finding + evidence → regression → verify; production-blocked-by-default.
 
+- **Observability (Stage 12):** `tests/unit/test_event_ingest_units.py` (fingerprints, event schema, redaction parity with the gateway redactor, hostile-input timing, thresholds, key format) and `tests/integration/test_observability.py` (key lifecycle and storage, off-by-default, identical 401s, cookies ignored, limits and drops, redaction in the database, grouping and sample caps, every alert rule, correlation, authorization matrix and audit, telemetry disclosure, internal alerts, alert-to-investigation/regression with the fake provider, retention); frontend `tests/alerts.test.jsx` plus axe cases.
+
 ## Running the database tests safely
 Use a throw-away database (never the real one): create `sentinel_ai_test`, export `TEST_DATABASE_URL=postgresql://USER:PASS@HOST/sentinel_ai_test` from an untracked env file, then `cd backend && poetry run pytest`. The suite runs `alembic downgrade base` on that database.
 

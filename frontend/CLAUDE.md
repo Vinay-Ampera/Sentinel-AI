@@ -39,3 +39,6 @@ The UI is **component-based and page-based**. Reuse before writing: search `src/
 
 ## Commands (run from `frontend/`; verified in Stage 1)
 `npm install`, `npm run dev`, `npm run build`, `npm run lint` (oxlint, Vite template default), `npm test` (Vitest + jsdom + Testing Library; tests in `tests/`). Node 24.
+
+## Alerts (Stage 12)
+- Alerts show what was measured, never a cause: no "root cause" wording, `acknowledged` is "seen" (not fixed), an empty list with no received events says so, and the telemetry panel's limits text is always shown. Reported events are plain text (`<pre>`), labelled "Reported by the application". Ingest keys are displayed once from the create response and never from a list.

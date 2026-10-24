@@ -17,16 +17,28 @@ class RateLimiter:
         self._events: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
 
-    def allow(self, key: str) -> bool:
-        """Record an attempt; False once ``max_events`` were seen inside the window."""
+    def blocked(self, key: str) -> bool:
+        """True when the key is already at its limit (nothing is recorded)."""
+        now = time.monotonic()
+        with self._lock:
+            events = self._events.get(key)
+            if not events:
+                return False
+            while events and now - events[0] > self._window:
+                events.popleft()
+            return len(events) >= self._max
+
+    def allow(self, key: str, cost: int = 1) -> bool:
+        """Record ``cost`` attempts; False (and nothing recorded) when they would pass
+        ``max_events`` inside the window."""
         now = time.monotonic()
         with self._lock:
             events = self._events.setdefault(key, deque())
             while events and now - events[0] > self._window:
                 events.popleft()
-            if len(events) >= self._max:
+            if len(events) + cost > self._max:
                 return False
-            events.append(now)
+            events.extend([now] * cost)
             if len(self._events) > 10_000:  # bound memory under address churn
                 self._events = {
                     k: v for k, v in self._events.items() if v and now - v[-1] <= self._window
