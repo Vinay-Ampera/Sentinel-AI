@@ -10,7 +10,7 @@ import json
 import re
 from collections.abc import Iterable
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from pydantic import SecretStr
 
@@ -34,6 +34,7 @@ def secret_values(settings: Settings) -> tuple[str, ...]:
     for value in (
         settings.database_url,
         settings.redis_url,
+        settings.redis_password,
         settings.session_token_pepper,
         settings.gemini_api_key,
     ):
@@ -42,6 +43,7 @@ def secret_values(settings: Settings) -> tuple[str, ...]:
             raw.append(text)
             parts = urlsplit(text)
             raw.extend(p for p in (parts.password, parts.username) if p)
+            raw.extend(unquote(p) for p in (parts.password, parts.username) if p)
     return tuple(sorted({v for v in raw if len(v) >= MIN_SECRET_LEN}, key=len, reverse=True))
 
 

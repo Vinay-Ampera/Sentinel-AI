@@ -67,3 +67,79 @@ def test_stub_executor_never_claims_a_result_it_did_not_produce() -> None:
     assert StubExecutor().execute(req, lambda: True).status == "cancelled"
     assert StubExecutor().terminate(uuid.uuid4()) is True
     assert isinstance(create_executor(make_settings()), StubExecutor)  # the default stays the stub
+
+
+# ---- Redis authentication (REDIS_PASSWORD merged into the broker URL) -------------------
+
+
+def test_redis_password_is_added_to_a_passwordless_url() -> None:
+    s = make_settings(redis_url="redis://localhost:6379/0", redis_password="pw-123456")
+    assert s.redis_url.get_secret_value() == "redis://:pw-123456@localhost:6379/0"
+
+
+def test_redis_password_is_url_encoded_and_keeps_username_and_database() -> None:
+    s = make_settings(
+        redis_url="rediss://cache-user@cache.internal:6380/2", redis_password="p@ss/w:rd#1"
+    )
+    assert s.redis_url.get_secret_value() == (
+        "rediss://cache-user:p%40ss%2Fw%3Ard%231@cache.internal:6380/2"
+    )
+
+
+def test_a_password_already_in_the_url_wins_over_redis_password() -> None:
+    s = make_settings(redis_url="redis://:from-url@cache:6379/0", redis_password="other-pw")
+    assert s.redis_url.get_secret_value() == "redis://:from-url@cache:6379/0"
+
+
+def test_without_redis_password_the_url_is_unchanged() -> None:
+    s = make_settings(redis_url="redis://localhost:6379/0")
+    assert s.redis_url.get_secret_value() == "redis://localhost:6379/0"
+
+
+def test_redis_password_reaches_the_celery_broker_and_the_health_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    s = make_settings(redis_url="redis://localhost:6379/0", redis_password="pw-123456")
+    assert make_celery(s).conf.broker_url == "redis://:pw-123456@localhost:6379/0"
+    assert make_celery(s, publisher=True).conf.broker_url == "redis://:pw-123456@localhost:6379/0"
+    assert not make_celery(s).conf.result_backend  # no separate result backend to authenticate
+
+    from sentinel_ai.core import health
+
+    seen: list[str] = []
+
+    class _Client:
+        def ping(self) -> bool:
+            return True
+
+        def close(self) -> None:
+            pass
+
+    def fake_from_url(url: str, **_: object) -> _Client:
+        seen.append(url)
+        return _Client()
+
+    monkeypatch.setattr(health.redis.Redis, "from_url", staticmethod(fake_from_url))
+    assert health.check_redis(s) == "ok"
+    assert seen == ["redis://:pw-123456@localhost:6379/0"]
+
+
+def test_redis_password_never_appears_in_repr_summary_or_secret_redaction() -> None:
+    from sentinel_ai.execution.evidence import secret_values
+
+    s = make_settings(redis_url="redis://localhost:6379/0", redis_password="p@ss/w:rd#1-long")
+    assert "p@ss" not in repr(s) and "rd#1" not in repr(s)
+    assert "p@ss" not in repr(s.safe_summary()) and "p%40ss" not in repr(s.safe_summary())
+    secrets = secret_values(s)
+    assert "p@ss/w:rd#1-long" in secrets  # the bare password is redacted from sandbox evidence
+
+
+def test_redis_password_must_not_be_blank_or_multiline() -> None:
+    for bad in ("", "  ", "a\nb"):
+        with pytest.raises(ValidationError):
+            make_settings(redis_password=bad)
+
+
+def test_redis_url_scheme_must_be_redis() -> None:
+    with pytest.raises(ValidationError):
+        make_settings(redis_url="http://localhost:6379/0", redis_password="pw-123456")

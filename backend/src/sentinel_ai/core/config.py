@@ -12,6 +12,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from pydantic import SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -81,6 +82,10 @@ class Settings(DatabaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     cors_allowed_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
+    # The same REDIS_PASSWORD that docker-compose uses for ``--requirepass``. When REDIS_URL has
+    # no password of its own it is merged into ``redis_url`` (see ``_redis_credentials``), so the
+    # API probe, Celery worker and beat all authenticate with one resolved URL.
+    redis_password: SecretStr | None = None
     redis_timeout_seconds: float = 2.0
 
     # --- Sessions / auth (consumed from Stage 4; ADR-0002) ---
@@ -292,6 +297,35 @@ class Settings(DatabaseSettings):
             raise ValueError("job timeouts must be <= 86400 seconds")
         if self.job_max_concurrent_batches_per_run > self.job_max_concurrent_batches:
             raise ValueError("per-run batch concurrency cannot exceed the global limit")
+        return self
+
+    @field_validator("redis_password")
+    @classmethod
+    def _check_redis_password(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None:
+            raw = value.get_secret_value()
+            if not raw.strip() or "\n" in raw or "\r" in raw:
+                raise ValueError("must not be blank or contain line breaks")
+        return value
+
+    @model_validator(mode="after")
+    def _redis_credentials(self) -> "Settings":
+        """Fold REDIS_PASSWORD into REDIS_URL unless the URL already carries a password.
+        Celery has no result backend (see ``jobs/celery_app``), so the broker URL is the only
+        Redis URL to authenticate. Errors here never echo the URL or the password."""
+        parts = urlsplit(self.redis_url.get_secret_value())
+        if parts.scheme not in ("redis", "rediss") or not parts.hostname:
+            raise ValueError("REDIS_URL must be redis://[:password@]host:port/db (or rediss://)")
+        if self.redis_password is None or parts.password:
+            return self
+        host = parts.hostname if ":" not in parts.hostname else f"[{parts.hostname}]"
+        port = f":{parts.port}" if parts.port else ""
+        user = quote(parts.username, safe="") if parts.username else ""
+        secret = quote(self.redis_password.get_secret_value(), safe="")
+        netloc = f"{user}:{secret}@{host}{port}"
+        self.redis_url = SecretStr(
+            urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+        )
         return self
 
     @model_validator(mode="after")
